@@ -15,6 +15,7 @@ class AuthorizationController extends Controller
     public function register(Request $request)
     {
         $request->validate([
+            'username' => 'required|string|max:255',
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
@@ -24,6 +25,7 @@ class AuthorizationController extends Controller
         ]);
 
         $user = User::create([
+            'username' => $request->username,
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
@@ -44,11 +46,11 @@ class AuthorizationController extends Controller
      public function login(Request $request)
     {
         $request->validate([
-            'name' => 'required|string',
+            'username' => 'required|string',
             'password' => 'required',
         ]);
 
-        $user = User::where('name', $request->name)->first();
+        $user = User::where('username', $request->username)->first();
 
         // 1. Check if user exists and password is correct
         if (!$user || !Hash::check($request->password, $user->password)) {
