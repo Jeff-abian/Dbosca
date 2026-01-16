@@ -5,6 +5,10 @@ use Illuminate\Support\Facades\Route;
 // Don't forget to import your controllers!
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\AuthorizationController; // The new controller for login/register
+use App\Http\Controllers\Api\ApplicationsController;
+use App\Http\Controllers\Api\MasterlistController;
+use App\Http\Controllers\Api\IdIssuanceController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -25,12 +29,17 @@ use App\Http\Controllers\Api\AuthorizationController; // The new controller for 
 Route::post('/auth/register', [AuthorizationController::class, 'register']);
 Route::post('/auth/login', [AuthorizationController::class, 'login']);
 
-
 // ===================================
 // 2. PROTECTED ROUTES
 // All routes inside this group require a valid Sanctum token.
 // ===================================
 Route::middleware('auth:sanctum')->group(function () {
+
+    
+
+    Route::apiResource('applications', ApplicationsController::class);
+    Route::apiResource('masterlist', MasterlistController::class);
+    Route::apiResource('id-issuances', IdIssuanceController::class);
 
     // Basic test route (default) and Logout
     Route::get('/user', function (Request $request) {
@@ -41,6 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Institution API Routes (Resource Declaration)
 
     Route::apiResource('users', UserController::class);
+    
 });
 
 
