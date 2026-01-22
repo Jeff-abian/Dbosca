@@ -11,145 +11,144 @@ class ApplicationsController extends Controller
 {
     /**
      * GET /api/applications
+     * PARA SA ADMIN LANG: Makikita ang lahat ng applications base sa status.
      */
- public function index(Request $request)
-{
-    // 1. Siguraduhin na Admin lang ang may access
-    if ($request->user()->role !== 'admin') {
+    public function index(Request $request)
+    {
+        // 1. Siguraduhin na Admin lang ang may access
+        if ($request->user()->role !== 'admin') {
+            return response()->json([
+                'status' => false,
+                'message' => 'Forbidden: Admins only can view the list.'
+            ], 403);
+        }
+
+        $status = $request->query('status', 'Pending');
+
+        $applications = Application::where('status', $status)
+            ->orderBy('date_submitted', 'desc')
+            ->paginate(15);
+
         return response()->json([
-            'status' => false,
-            'message' => 'Forbidden.'
-        ], 403);
+            'status' => true,
+            'viewing_status' => $status,
+            'count' => $applications->total(),
+            'data' => $applications
+        ]);
     }
-
-    // 2. Kunin ang 'status' mula sa URL (halimbawa: ?status=Approved)
-    // Default nito ay 'Pending' kung walang nilagay
-    $status = $request->query('status', 'Pending');
-
-    // 3. I-filter ang applications base sa status
-    $applications = Application::where('status', $status)
-        ->orderBy('date_submitted', 'desc')
-        ->paginate(15);
-
-    return response()->json([
-        'status' => true,
-        'viewing_status' => $status,
-        'count' => $applications->total(),
-        'data' => $applications
-    ]);
-}
 
     /**
      * POST /api/applications
+     * PARA SA LAHAT: Kahit sinong logged-in user ay pwedeng mag-submit.
      */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'citizen_id' => 'required|integer',
-
             'last_name' => 'required|string|max:255',
             'first_name' => 'required|string|max:255',
             'middle_name' => 'nullable|string|max:255',
-            'suffix' => 'nullable|string|max:50',
-
+            'suffix'     => 'nullable|string|max:10',
             'email' => 'required|email|max:255',
-
             'citizenship'=> 'required|string|max:255',
-
             'house_no'=> 'required|string|max:255',
             'street' => 'required|string|max:255',
             'barangay' => 'required|string|max:255',
             'city_municipality' => 'required|string|max:255',
             'province' => 'required|string|max:255',
             'district' => 'required|string|max:255',
-
             'age' => 'required|integer',
             'gender' => 'required|string',
             'civil_status' => 'required|string',
-
             'birthdate' => 'required|date',
             'birthplace' => 'required|string',
-
             'living_arrangement' => 'required|string',
-
-            // Pension
             'is_pensioner' => 'required|boolean',
             'pension_source' => 'nullable|string',
             'pension_amount' => 'nullable|string',
-
-            // Illness
             'has_illness' => 'required|boolean',
             'illness_details' => 'nullable|string',
-
-            // Documents
             'document_url' => 'required|string',
-
-            // Application info
             'application_type' => 'required|string',
-            'status' => 'required|string',
         ]);
 
-        // Idagdag ang user_id galing sa token
-        $validated['user_id'] = auth()->id();
+        // Force set defaults para hindi ma-manipulate ng user ang status sa simula
+        $validated['status'] = 'Pending';
+        $validated['user_id'] = $request->user()->user_id; // Gamit ang custom user_id mo
 
         $application = Application::create($validated);
 
         return response()->json([
             'status' => 'success',
             'message' => 'Application submitted successfully.',
-            'data' => $application
+            // Hindi na natin ibabalik ang buong data para hindi makita ang status field kung ayaw mo talaga
         ], Response::HTTP_CREATED);
     }
 
     /**
      * GET /api/applications/{application}
+     * PARA SA ADMIN LANG: Admin lang ang pwedeng tumingin ng detalye ng isang specific application.
      */
-    public function show(Application $application)
-{
-    // Check kung ang application ay pagmamay-ari ng naka-login na user
-    if ($application->user_id !== auth()->id()) {
+    public function show(Request $request, Application $application)
+    {
+        if ($request->user()->role !== 'admin') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized: Only admins can view application details.'
+            ], 403);
+        }
+
         return response()->json([
-            'status' => 'error',
-            'message' => 'Unauthorized access.'
-        ], Response::HTTP_FORBIDDEN);
+            'status' => 'success',
+            'data' => $application
+        ], Response::HTTP_OK);
     }
 
-    return response()->json([
-        'status' => 'success',
-        'data' => $application
-    ], Response::HTTP_OK);
-}
-
     /**
-     * PUT/PATCH /api/applications/{application}
+     * PUT /api/applications/{application}
+     * PARA SA ADMIN LANG: Dito mag-a-approve o disapprove si Admin.
      */
     public function update(Request $request, Application $application)
     {
+        if ($request->user()->role !== 'admin') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized: Only admins can update status.'
+            ], 403);
+        }
+
         $validated = $request->validate([
-            'last_name' => 'sometimes|string|max:255',
-            'status' => 'sometimes|string',
-            'reason_for_disapproval' => 'nullable|string',
-            'date_reviewed' => 'nullable|date',
-            'reviewed_by' => 'nullable|string',
+            'status' => 'required|in:Approved,Disapproved,Pending',
+            'reason_for_disapproval' => 'required_if:status,Disapproved|string|nullable',
             'notes' => 'nullable|string',
         ]);
+
+        // Auto-fill ng admin info
+        $validated['reviewed_by'] = $request->user()->name;
+        $validated['date_reviewed'] = now();
 
         $application->update($validated);
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Application updated successfully.',
+            'message' => 'Application updated successfully by Admin.',
             'data' => $application
         ], Response::HTTP_OK);
     }
 
     /**
      * DELETE /api/applications/{application}
+     * PARA SA ADMIN LANG: Admin lang ang pwedeng mag-delete.
      */
-    public function destroy(Application $application)
+    public function destroy(Request $request, Application $application)
     {
-        $application->delete();
+        if ($request->user()->role !== 'admin') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized.'
+            ], 403);
+        }
 
-        return response()->json(null, Response::HTTP_NO_CONTENT);
+        $application->delete();
+        return response()->json(['message' => 'Application deleted.'], 200);
     }
 }

@@ -28,12 +28,10 @@ class Application extends Model
      * The attributes that are mass assignable.
      */
     protected $fillable = [
-    'user_id',
-    'citizen_id',
     'last_name',
+    'suffix',
     'first_name',
     'middle_name',
-    'suffix',
     'email',
     'citizenship',
     'house_no',
