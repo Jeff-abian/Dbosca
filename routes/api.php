@@ -28,6 +28,8 @@ use App\Http\Controllers\Api\IdIssuanceController;
 // ===================================
 Route::post('/auth/register', [AuthorizationController::class, 'register']);
 Route::post('/auth/login', [AuthorizationController::class, 'login']);
+Route::post('/applications', [ApplicationsController::class, 'store']);
+
 
 // ===================================
 // 2. PROTECTED ROUTES
@@ -36,10 +38,15 @@ Route::post('/auth/login', [AuthorizationController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
 
     
-
+    Route::apiResource('id-renewals', IdRenewalController::class);
     Route::apiResource('applications', ApplicationsController::class);
     Route::apiResource('masterlist', MasterlistController::class);
     Route::apiResource('id-issuances', IdIssuanceController::class);
+    Route::apiResource('id-replacements', IdReplacementController::class);
+    Route::get('/applications', [ApplicationsController::class, 'index']);
+    Route::get('/applications/{application}', [ApplicationsController::class, 'show']);
+    Route::put('/applications/{application}', [ApplicationsController::class, 'update']);
+    Route::delete('/applications/{application}', [ApplicationsController::class, 'destroy']);
 
     // Basic test route (default) and Logout
     Route::get('/user', function (Request $request) {
@@ -52,6 +59,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('users', UserController::class);
     
 });
+
+
 
 
 

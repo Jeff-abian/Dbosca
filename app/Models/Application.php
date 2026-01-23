@@ -34,6 +34,7 @@ class Application extends Model
     'middle_name',
     'email',
     'citizenship',
+    'contact_number',
     'house_no',
     'street',
     'barangay',

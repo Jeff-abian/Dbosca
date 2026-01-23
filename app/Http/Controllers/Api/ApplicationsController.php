@@ -11,15 +11,15 @@ class ApplicationsController extends Controller
 {
     /**
      * GET /api/applications
-     * PARA SA ADMIN LANG: Makikita ang lahat ng applications base sa status.
+     * Restricted: Admin only (Dapat gamitan ng middleware sa routes)
      */
     public function index(Request $request)
     {
-        // 1. Siguraduhin na Admin lang ang may access
-        if ($request->user()->role !== 'admin') {
+        // Dahil inalis natin ang global middleware, kailangan i-check kung auth ang user dito
+        if (!$request->user() || $request->user()->role !== 'admin') {
             return response()->json([
                 'status' => false,
-                'message' => 'Forbidden: Admins only can view the list.'
+                'message' => 'Forbidden: Admins only.'
             ], 403);
         }
 
@@ -39,7 +39,7 @@ class ApplicationsController extends Controller
 
     /**
      * POST /api/applications
-     * PARA SA LAHAT: Kahit sinong logged-in user ay pwedeng mag-submit.
+     * PUBLIC: Kahit sino pwedeng mag-register (No Bearer Token Required)
      */
     public function store(Request $request)
     {
@@ -49,6 +49,7 @@ class ApplicationsController extends Controller
             'middle_name' => 'nullable|string|max:255',
             'suffix'     => 'nullable|string|max:10',
             'email' => 'required|email|max:255',
+            'contact_number' => 'required|string|max:20',
             'citizenship'=> 'required|string|max:255',
             'house_no'=> 'required|string|max:255',
             'street' => 'required|string|max:255',
@@ -69,51 +70,42 @@ class ApplicationsController extends Controller
             'illness_details' => 'nullable|string',
             'document_url' => 'required|string',
             'application_type' => 'required|string',
+            'user_id' => 'nullable|integer', // Optional na lang ito dahil public registration ito
         ]);
 
-        // Force set defaults para hindi ma-manipulate ng user ang status sa simula
+        // Default settings para sa bagong registration
         $validated['status'] = 'Pending';
-        $validated['user_id'] = $request->user()->user_id; // Gamit ang custom user_id mo
+        $validated['date_submitted'] = now();
 
         $application = Application::create($validated);
 
         return response()->json([
             'status' => 'success',
             'message' => 'Application submitted successfully.',
-            // Hindi na natin ibabalik ang buong data para hindi makita ang status field kung ayaw mo talaga
         ], Response::HTTP_CREATED);
     }
 
     /**
      * GET /api/applications/{application}
-     * PARA SA ADMIN LANG: Admin lang ang pwedeng tumingin ng detalye ng isang specific application.
+     * Restricted: Admin only
      */
     public function show(Request $request, Application $application)
     {
-        if ($request->user()->role !== 'admin') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized: Only admins can view application details.'
-            ], 403);
+        if (!$request->user() || $request->user()->role !== 'admin') {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
         }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $application
-        ], Response::HTTP_OK);
+        return response()->json(['status' => 'success', 'data' => $application], Response::HTTP_OK);
     }
 
     /**
      * PUT /api/applications/{application}
-     * PARA SA ADMIN LANG: Dito mag-a-approve o disapprove si Admin.
+     * Restricted: Admin only
      */
     public function update(Request $request, Application $application)
     {
-        if ($request->user()->role !== 'admin') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized: Only admins can update status.'
-            ], 403);
+        if (!$request->user() || $request->user()->role !== 'admin') {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
         }
 
         $validated = $request->validate([
@@ -122,7 +114,6 @@ class ApplicationsController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        // Auto-fill ng admin info
         $validated['reviewed_by'] = $request->user()->name;
         $validated['date_reviewed'] = now();
 
@@ -130,22 +121,19 @@ class ApplicationsController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Application updated successfully by Admin.',
+            'message' => 'Application updated successfully.',
             'data' => $application
         ], Response::HTTP_OK);
     }
 
     /**
      * DELETE /api/applications/{application}
-     * PARA SA ADMIN LANG: Admin lang ang pwedeng mag-delete.
+     * Restricted: Admin only
      */
     public function destroy(Request $request, Application $application)
     {
-        if ($request->user()->role !== 'admin') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized.'
-            ], 403);
+        if (!$request->user() || $request->user()->role !== 'admin') {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
         }
 
         $application->delete();
