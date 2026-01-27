@@ -11,10 +11,11 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
+    
 
     // 1. Custom Primary Key
     protected $primaryKey = 'id'; 
-    
+    public $incrementing = true;
     // 2. Custom Date Columns (Laravel's default 'updated_at' is not used)
 
     
@@ -33,6 +34,14 @@ class User extends Authenticatable
         
          // Include the custom column
     ];
+     // 3. Relationships
+    public function roleRelation()
+    {
+        // belongsTo(RelatedModel, foreign_key_on_users_table, owner_key_on_roles_table)
+        // Siguraduhin na 'role' ang column name sa users table mo na naglalaman ng Role ID
+        return $this->belongsTo(Role::class, 'role', 'role_id');
+    }
+}
     
     // ... rest of the file
-}
+

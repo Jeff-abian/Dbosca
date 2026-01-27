@@ -31,15 +31,15 @@ Route::post('/auth/login', [AuthorizationController::class, 'login']);
 Route::post('/applications', [ApplicationsController::class, 'store']);
 
 
+
 // ===================================
 // 2. PROTECTED ROUTES
 // All routes inside this group require a valid Sanctum token.
 // ===================================
 Route::middleware('auth:sanctum')->group(function () {
 
-    
-    Route::apiResource('id-renewals', IdRenewalController::class);
     Route::apiResource('masterlist', MasterlistController::class);
+    Route::apiResource('id-renewals', IdRenewalController::class);
     Route::apiResource('id-issuances', IdIssuanceController::class);
     Route::apiResource('id-replacements', IdReplacementController::class);
     Route::get('/applications', [ApplicationsController::class, 'index']);

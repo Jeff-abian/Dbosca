@@ -5,10 +5,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class Masterlist extends Model
 {
+    // Idagdag ito para sabihing hindi mo ginagamit ang default timestamps
+    public $timestamps = false;
+    
+    // Siguraduhin din na naka-set ang primary key kung hindi ito 'id'
+    protected $primaryKey = 'citizen_id';
     protected $table = 'masterlist';
     
     // Set the primary key if it is not 'id' (e.g., citizen_id)
-    protected $primaryKey = 'citizen_id';
+   
     public $incrementing = false; // Set to true if it's an auto-incrementing INT
 
     // Map Laravel's timestamps to your existing columns

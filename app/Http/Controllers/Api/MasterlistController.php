@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -9,85 +10,142 @@ use Illuminate\Http\Response;
 
 class MasterlistController extends Controller
 {
-    public function index()
+    /**
+     * Helper function para i-check kung ang user ay Admin o Super Admin
+     */
+    private function isAuthorizedAdmin(Request $request)
     {
-        // Filter by the ID of the user owning the Bearer Token
-        $data = Masterlist::where('user_id', auth()->id())->get();
-        return MasterlistResource::collection($data);
+        $user = $request->user()->load('roleRelation');
+        $roleName = strtolower(optional($user->roleRelation)->name);
+        return in_array($roleName, ['admin', 'super admin']);
     }
 
-    public function show($id)
+    /**
+     * GET /api/masterlist
+     * Makikita ng Admin/Super Admin ang lahat. Ang User ay sa kanya lang.
+     */
+    public function index(Request $request)
+{
+    if ($this->isAuthorizedAdmin($request)) {
+        // Palitan ang 'created_at' ng 'date_submitted' o kung ano mang column ang meron ka
+        $data = Masterlist::orderBy('date_submitted', 'desc')->get();
+    } else {
+        $data = Masterlist::where('user_id', $request->user()->user_id)
+                          ->orderBy('date_submitted', 'desc')
+                          ->get();
+    }
+
+    return MasterlistResource::collection($data);
+}
+
+    /**
+     * GET /api/masterlist/{id}
+     * Detail view na may permission check.
+     */
+    public function show(Request $request, $id)
     {
-        $record = Masterlist::where('user_id', auth()->id())
-                            ->where('citizen_id', $id)
-                            ->firstOrFail();
-                            
+        // Hanapin ang record gamit ang citizen_id (o primary key mo)
+        $record = Masterlist::where('citizen_id', $id)->first();
+
+        if (!$record) {
+            return response()->json(['message' => 'Record not found.'], 404);
+        }
+
+        // Check kung Admin/Super Admin OR kung siya ang owner
+        if (!$this->isAuthorizedAdmin($request) && $record->user_id !== $request->user()->user_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized access.'
+            ], 403);
+        }
+
         return new MasterlistResource($record);
     }
+
+    /**
+     * POST /api/masterlist
+     * Pag-create ng bagong record sa Masterlist.
+     */
     public function store(Request $request)
-{
-    // 1. Validation - siguraduhin na tama ang data na pinapasa
-    $validated = $request->validate([
-        'citizen_id' => 'required|integer|unique:masterlist,citizen_id',
-        'citizenship' => 'required|string|max:255',
-        'barangay' => 'required|string|max:255',
-        'city_municipality' => 'required|string|max:255',
-        'civil_status' => 'required|string|max:255',
-        'district' => 'required|string|integer|max:255',
-        'province' => 'required|string|max:255',
-        'last_name' => 'required|string|max:255',
-        'first_name' => 'required|string|max:255',
-        'email' => 'required|email|max:255',
-        'gender' => 'required|string',
-        'status' => 'required|string',
-        'birthdate' => 'required|date',
-        'birthplace' => 'required|string',
-        // Idagdag dito ang iba pang kailangang columns...
-    ]);
+    {
+        $validated = $request->validate([
+            'citizen_id' => 'required|integer|unique:masterlist,citizen_id',
+            'citizenship' => 'required|string|max:255',
+            'barangay' => 'required|string|max:255',
+            'city_municipality' => 'required|string|max:255',
+            'civil_status' => 'required|string|max:255',
+            'district' => 'required|string|max:255',
+            'province' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
+            'gender' => 'required|string',
+            'status' => 'required|string',
+            'birthdate' => 'required|date',
+            'birthplace' => 'required|string',
+        ]);
 
-    // 2. Awtomatikong kunin ang user_id mula sa Bearer Token
-    $validated['user_id'] = auth()->id();
-    
-    // 3. I-set ang date_submitted (optional kung gusto mong manual)
-    $validated['date_submitted'] = now();
+        $validated['user_id'] = $request->user()->user_id;
+        $validated['date_submitted'] = now();
 
-    // 4. I-save sa database
-    $record = Masterlist::create($validated);
+        $record = Masterlist::create($validated);
 
-    return response()->json([
-        'status' => 'success',
-        'message' => 'Record created successfully.',
-        'data' => $record
-    ], 201); // 201 means Created
-}
-    public function destroy($id)
-{
-    // 1. Hanapin ang record gamit ang citizen_id
-    $record = Masterlist::where('citizen_id', $id)->first();
-
-    // 2. Kung walang nahanap na record
-    if (!$record) {
         return response()->json([
-            'status' => 'error',
-            'message' => 'Record not found.'
-        ], Response::HTTP_NOT_FOUND);
+            'status' => 'success',
+            'message' => 'Record created successfully.',
+            'data' => $record
+        ], 201);
     }
 
-    // 3. Ownership Check: Siguraduhing ang user_id ng record ay tugma sa naka-login na user
-    if ($record->user_id !== auth()->id()) {
+    /**
+     * PUT /api/masterlist/{id}
+     * Pag-update ng data (Admin/Super Admin only o Owner).
+     */
+    public function update(Request $request, $id)
+    {
+        $record = Masterlist::where('citizen_id', $id)->first();
+
+        if (!$record) {
+            return response()->json(['message' => 'Record not found.'], 404);
+        }
+
+        if (!$this->isAuthorizedAdmin($request) && $record->user_id !== $request->user()->user_id) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        $record->update($request->all());
+
         return response()->json([
-            'status' => 'error',
-            'message' => 'Unauthorized. You do not own this record.'
-        ], Response::HTTP_FORBIDDEN);
+            'status' => 'success',
+            'message' => 'Record updated successfully.',
+            'data' => $record
+        ]);
     }
 
-    // 4. Burahin ang record
-    $record->delete();
+    /**
+     * DELETE /api/masterlist/{id}
+     * Admin/Super Admin can delete anything. User can only delete theirs.
+     */
+    public function destroy(Request $request, $id)
+    {
+        $record = Masterlist::where('citizen_id', $id)->first();
 
-    return response()->json([
-        'status' => 'success',
-        'message' => 'Record deleted successfully.'
-    ], Response::HTTP_OK);
-}
-}
+        if (!$record) {
+            return response()->json(['message' => 'Record not found.'], 404);
+        }
 
+        if (!$this->isAuthorizedAdmin($request) && $record->user_id !== $request->user()->user_id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized to delete this record.'
+            ], 403);
+        }
+
+        $record->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Record deleted successfully.'
+        ]);
+    }
+}
