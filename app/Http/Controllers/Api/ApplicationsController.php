@@ -144,7 +144,7 @@ class ApplicationsController extends Controller
                     'email'    => $application->email,
                     'username' => $username,
                     'password' => Hash::make($tempPassword),
-                    'role'     => 3, 
+                    'role'     => 5, 
                 ]);
 
                 // ⚠️ PAGBABAGO: Gamitin ang ->id (base sa screenshot mo)
