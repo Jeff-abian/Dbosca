@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Models\IdRenewal;
 
-class IdRenewals extends Controller
+
+class IdRenewalsController extends Controller
 {
     /**
      * POST /api/id-renewals
@@ -41,12 +43,26 @@ class IdRenewals extends Controller
      */
     public function index(Request $request)
     {
-        if ($request->user() && $request->user()->role === 'admin') {
-            return response()->json(IdRenewal::all());
+        // 1. Kunin ang user object at i-load ang roleRelation
+        $user = $request->user()->load('roleRelation');
+        
+        // 2. Kunin ang pangalan ng role (e.g., 'admin', 'citizen')
+        $roleName = strtolower($user->roleRelation->name ?? '');
+
+        // 3. Logic para sa Admin vs Citizen
+        if (in_array($roleName, ['admin', 'super admin'])) {
+            // Kapag Admin o Super Admin, makikita ang lahat ng renewal requests
+            $data = IdRenewal::all();
+        } else {
+            // Kapag Citizen, makikita lang ang sariling renewal requests gamit ang user_id
+            $data = IdRenewal::where('user_id', $user->id)->get();
         }
 
-        return response()->json(
-            IdRenewal::where('user_id', auth()->id())->get()
-        );
+        // 4. I-return ang response
+        return response()->json([
+            'status' => 'success',
+            'role_detected' => $roleName,
+            'data' => $data
+        ]);
     }
 }

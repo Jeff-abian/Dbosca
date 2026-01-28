@@ -8,6 +8,9 @@ use App\Http\Controllers\Api\AuthorizationController; // The new controller for 
 use App\Http\Controllers\Api\ApplicationsController;
 use App\Http\Controllers\Api\MasterlistController;
 use App\Http\Controllers\Api\IdIssuanceController;
+use App\Http\Controllers\Api\IdRenewalsController;
+use App\Http\Controllers\Api\IdReplacementController;
+
 
 
 /*
@@ -39,7 +42,7 @@ Route::post('/applications', [ApplicationsController::class, 'store']);
 Route::middleware('auth:sanctum')->group(function () {
 
     Route::apiResource('masterlist', MasterlistController::class);
-    Route::apiResource('id-renewals', IdRenewalController::class);
+    Route::apiResource('id-renewal', IdRenewalsController::class);
     Route::apiResource('id-issuances', IdIssuanceController::class);
     Route::apiResource('id-replacements', IdReplacementController::class);
     Route::get('/applications', [ApplicationsController::class, 'index']);

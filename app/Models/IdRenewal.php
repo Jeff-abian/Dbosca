@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class IdRenewals extends Model
+class IdRenewal extends Model
 {
    protected $table = 'id_renewals';
     protected $primaryKey = 'renewal_id';

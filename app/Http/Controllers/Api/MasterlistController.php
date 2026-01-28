@@ -26,18 +26,30 @@ class MasterlistController extends Controller
      */
     public function index(Request $request)
 {
-    if ($this->isAuthorizedAdmin($request)) {
-        // Palitan ang 'created_at' ng 'date_submitted' o kung ano mang column ang meron ka
-        $data = Masterlist::orderBy('date_submitted', 'desc')->get();
+    $user = $request->user();
+    
+    // Kunin ang role name para mas accurate ang check
+    $roleName = strtolower($user->roleRelation->name ?? '');
+
+    if (in_array($roleName, ['admin', 'super admin'])) {
+        // Admin: Kita lahat
+        $data = Masterlist::all();
     } else {
-        $data = Masterlist::where('user_id', $request->user()->user_id)
-                          ->orderBy('date_submitted', 'desc')
-                          ->get();
+        // Citizen: Kita lang ang sariling record
+        // Siguraduhin na 'user_id' ang column name sa masterlist table mo
+        $data = Masterlist::where('user_id', $user->id)->get();
+    }
+
+    if ($data->isEmpty()) {
+        return response()->json([
+            'message' => 'No records found for this user.',
+            'debug_user_id' => $user->id,
+            'role_detected' => $roleName
+        ], 200);
     }
 
     return MasterlistResource::collection($data);
 }
-
     /**
      * GET /api/masterlist/{id}
      * Detail view na may permission check.

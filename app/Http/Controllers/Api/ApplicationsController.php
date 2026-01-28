@@ -7,6 +7,7 @@ use App\Models\Application;
 use App\Models\User;
 use App\Models\Masterlist;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str; // <--- 1. ILAGAY DITO SA TAAS
@@ -144,7 +145,7 @@ class ApplicationsController extends Controller
                     'email'    => $application->email,
                     'username' => $username,
                     'password' => Hash::make($tempPassword),
-                    'role'     => 2, 
+                    'role'     => 3, 
                 ]);
 
                 // ⚠️ PAGBABAGO: Gamitin ang ->id (base sa screenshot mo)
