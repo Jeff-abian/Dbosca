@@ -81,7 +81,7 @@ class ApplicationsController extends Controller
             'illness_details' => 'nullable|string',
             'document_url' => 'required|string',
             'application_type' => 'required|string',
-            'citizen_id' => 'required|string', // Siguraduhing kasama ito para sa Masterlist
+        
         ]);
 
         $validated['status'] = 'Pending';
@@ -99,99 +99,113 @@ class ApplicationsController extends Controller
      * PUT /api/applications/{application}
      * Admin Action: Approve/Disapprove Application
      */
-    public function update(Request $request, Application $application)
-    {
-        $user = $request->user()->load('roleRelation');
-        $roleName = strtolower(optional($user->roleRelation)->name);
+   public function update(Request $request, Application $application)
+{
+    // 1. KILALANIN ANG USER AT ROLE
+    $user = $request->user()->load('roleRelation');
+    $roleName = strtolower(optional($user->roleRelation)->name);
 
-        if (!in_array($roleName, ['admin', 'super admin'])) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
+    // 2. HIGPITAN ANG ACCESS: Admin at Super Admin lang ang pwede rito
+    $authorizedRoles = ['admin', 'super admin'];
+    if (!in_array($roleName, $authorizedRoles)) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Unauthorized: Only Admins or Super Admins can update application status.'
+        ], 403);
+    }
 
-        $validated = $request->validate([
-            'status' => 'required|in:Approved,Disapproved,Pending',
-            'reason_for_disapproval' => 'required_if:status,Disapproved|string|nullable',
+    // 3. VALIDATION
+    $validated = $request->validate([
+        'status' => 'required|in:Approved,Disapproved,Pending',
+        'reason_for_disapproval' => 'required_if:status,Disapproved|string|nullable',
+    ]);
+
+    try {
+        // 4. TRANSACTION (Siguraduhing kasama ang $validated sa 'use')
+        DB::transaction(function () use ($request, $application, $validated) {
+            
+            if ($validated['status'] === 'Approved') {
+                // Logic para sa account creation
+                $tempPassword = 'User' . now()->year . '!'; 
+                $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
+
+                $newUser = User::create([
+                    'name'     => $application->first_name . ' ' . $application->last_name,
+                    'email'    => $application->email,
+                    'username' => $username,
+                    'password' => Hash::make($tempPassword),
+                    'role'     => 3, // Citizen Role
+                ]);
+
+                // Pag-create sa Masterlist (Auto-increment ang citizen_id)
+                Masterlist::create([
+                    'user_id'           => $newUser->id,
+                    'first_name'        => $application->first_name,
+                    'last_name'         => $application->last_name,
+                    'email'             => $application->email,
+                    'barangay'          => $application->barangay,
+                    'city_municipality' => $application->city_municipality,
+                    'province'          => $application->province,
+                    'district'          => $application->district,
+                    'birthdate'         => $application->birthdate,
+                    'gender'            => $application->gender,
+                    'civil_status'      => $application->civil_status,
+                    'citizenship'       => $application->citizenship,
+                    'status'            => 'Active',
+                    'date_submitted'    => $application->date_submitted,
+                ]);
+
+                // Burahin ang original application dahil nasa Masterlist na
+                $application->delete();
+
+            } else {
+                // Kung Disapproved o Pending
+                $application->update([
+                    'status' => $validated['status'],
+                    'reviewed_by' => $request->user()->name,
+                    'date_reviewed' => now(),
+                    'reason_for_disapproval' => $validated['reason_for_disapproval'] ?? null,
+                ]);
+            }
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Application status updated successfully.'
         ]);
 
-        try {
-            DB::transaction(function () use ($request, $application, $validated) {
-                
-                if ($validated['status'] === 'Approved') {
-                    $tempPassword = 'User' . now()->year . '!'; 
-                    $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
-
-                    // 1. Gagawa ng account sa Users table (Role 3 = Citizen)
-                    $newUser = User::create([
-                        'name'     => $application->first_name . ' ' . $application->last_name,
-                        'email'    => $application->email,
-                        'username' => $username,
-                        'password' => Hash::make($tempPassword),
-                        'role'     => 3, 
-                    ]);
-
-                    $newUserId = $newUser->id; 
-
-                    if (!$newUserId) {
-                        throw new \Exception("Failed to retrieve new User ID.");
-                    }
-
-                    // 2. Ililipat ang data sa Masterlist table
-                    Masterlist::create([
-                        'user_id'           => $newUserId,
-                        'citizen_id'        => $application->citizen_id,
-                        'first_name'        => $application->first_name,
-                        'last_name'         => $application->last_name,
-                        'email'             => $application->email,
-                        'barangay'          => $application->barangay,
-                        'city_municipality' => $application->city_municipality,
-                        'province'          => $application->province,
-                        'district'          => $application->district,
-                        'birthdate'         => $application->birthdate,
-                        'gender'            => $application->gender,
-                        'civil_status'      => $application->civil_status,
-                        'citizenship'       => $application->citizenship,
-                        'status'            => 'Active',
-                        'date_submitted'    => $application->date_submitted,
-                    ]);
-
-                    // 3. BURAHIN ang original application record dahil nasa Masterlist na ito
-                    $application->delete();
-
-                } else {
-                    // Kung Disapproved o Pending, i-update lang ang record sa Application table
-                    $application->update([
-                        'status' => $validated['status'],
-                        'reviewed_by' => $request->user()->name,
-                        'date_reviewed' => now(),
-                        'reason_for_disapproval' => $validated['reason_for_disapproval'] ?? null,
-                    ]);
-                }
-            });
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Application processed successfully.'
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed: ' . $e->getMessage()], 500);
-        }
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Failed: ' . $e->getMessage()], 500);
     }
+}
 
     /**
      * DELETE /api/applications/{application}
      */
     public function destroy(Request $request, Application $application)
-    {
-        $user = $request->user()->load('roleRelation');
-        $roleName = strtolower(optional($user->roleRelation)->name);
+{
+    // 1. Kilalanin ang user at kunin ang role name
+    $user = $request->user()->load('roleRelation');
+    $roleName = strtolower(optional($user->roleRelation)->name);
 
-        if (!in_array($roleName, ['admin', 'super admin'])) {
-            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
-        }
+    // 2. I-define ang authorized roles para sa pagbubura
+    $authorizedRoles = ['admin', 'super admin'];
 
-        $application->delete();
-
-        return response()->json(['status' => 'success', 'message' => 'Deleted successfully.'], 200);
+    // 3. Security Guard: Check kung authorized ang role
+    if (!in_array($roleName, $authorizedRoles)) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Unauthorized: Only Admins and Super Admins can delete application records.',
+            'your_role' => $roleName
+        ], 403); // 403 Forbidden
     }
+
+    // 4. Isagawa ang pagbura kung pumasa sa role check
+    $application->delete();
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Application record has been successfully deleted.'
+    ], 200);
+}
 }
