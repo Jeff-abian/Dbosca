@@ -26,6 +26,6 @@ class Masterlist extends Model
         'citizenship', 'house_no', 'street', 'barangay', 'city_municipality',
         'province', 'district', 'age', 'gender', 'civil_status', 'birthdate',
         'birthplace', 'living_arrangement', 'date_submitted', 
-        'applicant_signature_image', 'received_by', 'status', 'email'
+        'applicant_signature_image', 'received_by', 'status', 'email','scid_number'
     ];
 }

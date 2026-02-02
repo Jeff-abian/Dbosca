@@ -42,67 +42,72 @@ class IdIssuanceController extends Controller
      * Mag-save ng bagong ID issuance record.
      */
     public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'issuance_id' => 'required|integer',
-            'citizen_id' => 'required|integer',
-            'user_id' => 'required|integer',
-            'id_number' => 'required|integer',
-            'gender' => 'required|string|max:255',
-            'senior_contact_number' => 'required|integer',
-            'last_name' => 'required|string|max:255',
-            'first_name' => 'required|string|max:255',
-            'middle_name' => 'required|string|max:255',
-            'suffix' => 'required|string|max:255',
-            'birthdate' => 'required', // Tatanggap ng format na YYYY-MM-DD o July 5, 1985
-            'place_of_birth' => 'required|string',
-            'age' => 'required|integer',
-            'house_no' => 'required|string|integer',
-            'street' => 'required|string',
-            'barangay' => 'required|string',
-            'city_municipality' => 'required|string',
-            'province' => 'required|string',
-            'district' => 'required|string|integer',
-            'citizenship' => 'required|string',
-            'civil_status' => 'required|string',
-            'emergency_contact_person' => 'required|string',
-            'contact_number' => 'required|integer',
-            'willing_member' => 'required|string',
-            'email' => 'required|email',
-            'status' => 'required|string',
-            'approved_date' => 'required',
-            'submitted_date' => 'required',
-            'approved_at' => 'required',
-            'issued_date' => 'required',
-            'released_date' => 'required',
-            'photo_url' => 'required',
-            'req1_url' => 'required',
-            'req2_url' => 'required',
+{
+    // 1. Kunin ang authenticated user
+    $user = $request->user();
 
+    // 2. Hanapin ang kaukulang record sa Masterlist para makuha ang citizen_id
+    // Ginagamit natin ang user_id bilang link
+    $masterlist = \App\Models\Masterlist::where('user_id', $user->id)->first();
 
-
-        ]);
-
-        // Awtomatikong conversion ng birthdate format para sa MySQL
-        try {
-            $validated['birthdate'] = Carbon::parse($request->birthdate)->format('Y-m-d');
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Invalid birthdate format.'], 422);
-        }
-
-        // Ikabit ang user_id mula sa Bearer Token
-        $validated['user_id'] = auth()->id();
-        $validated['date_submitted'] = now();
-
-        $issuance = IdIssuance::create($validated);
-
+    if (!$masterlist) {
         return response()->json([
-            'status' => 'success',
-            'message' => 'ID Issuance record created successfully.',
-            'data' => $issuance
-        ], Response::HTTP_CREATED);
+            'status' => 'error',
+            'message' => 'User record not found in Masterlist.'
+        ], 404);
     }
 
+    // 3. Validation: Inalis ang issuance_id, citizen_id, at user_id
+    $validated = $request->validate([
+        'id_number' => 'required|string', // Ginawang string kung may leading zeros
+        'gender' => 'required|string|max:255',
+        'senior_contact_number' => 'required|string', // String para sa contact numbers
+        'last_name' => 'required|string|max:255',
+        'first_name' => 'required|string|max:255',
+        'middle_name' => 'nullable|string|max:255',
+        'suffix' => 'nullable|string|max:255',
+        'birthdate' => 'required', 
+        'place_of_birth' => 'required|string',
+        'age' => 'required|integer',
+        'house_no' => 'required|string',
+        'street' => 'required|string',
+        'barangay' => 'required|string',
+        'city_municipality' => 'required|string',
+        'province' => 'required|string',
+        'district' => 'required|string',
+        'citizenship' => 'required|string',
+        'civil_status' => 'required|string',
+        'emergency_contact_person' => 'required|string',
+        'contact_number' => 'required|string',
+        'willing_member' => 'required|string',
+        'email' => 'required|email',
+        'photo_url' => 'required|string',
+        'req1_url' => 'required|string',
+        'req2_url' => 'required|string',
+    ]);
+
+    // 4. Conversion ng Birthdate
+    try {
+        $validated['birthdate'] = \Carbon\Carbon::parse($request->birthdate)->format('Y-m-d');
+    } catch (\Exception $e) {
+        return response()->json(['message' => 'Invalid birthdate format.'], 422);
+    }
+
+    // 5. Automatic Assignment ng IDs at Dates
+    // Ang issuance_id ay hindi na isasama rito dahil AUTO-INCREMENT ito sa database
+    $validated['user_id'] = $user->id; 
+    $validated['citizen_id'] = $masterlist->citizen_id; // Foreign Key mula sa Masterlist
+    $validated['status'] = 'Pending'; // Default status para sa bagong request
+    $validated['submitted_date'] = now();
+
+    $issuance = \App\Models\IdIssuance::create($validated);
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'ID Issuance record created successfully.',
+        'data' => $issuance
+    ], 201);
+}
     /**
      * Ipakita ang specific record (may ownership check).
      */

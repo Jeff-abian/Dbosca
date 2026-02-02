@@ -81,7 +81,7 @@ class MasterlistController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-           
+            'scid_number' => 'required|integer',
             'citizenship' => 'required|string|max:255',
             'barangay' => 'required|string|max:255',
             'city_municipality' => 'required|string|max:255',
