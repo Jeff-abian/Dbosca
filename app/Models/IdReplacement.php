@@ -15,7 +15,7 @@ class IdReplacement extends Model
     public $timestamps = false; 
 
     protected $fillable = [
-        'citizen_id', 'user_id', 'old_id_number', 'new_id_number', 'gender',
+        'citizen_id', 'user_id', 'old_id_number', 'new_id_number', 'gender','scid_number',
         'last_name', 'first_name', 'middle_name', 'suffix', 'birthdate',
         'place_of_birth', 'age', 'house_no', 'street', 'barangay',
         'city_municipality', 'province', 'district', 'citizenship',

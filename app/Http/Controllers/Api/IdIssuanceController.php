@@ -59,7 +59,7 @@ class IdIssuanceController extends Controller
 
     // 3. Validation: Inalis ang issuance_id, citizen_id, at user_id
     $validated = $request->validate([
-        'id_number' => 'required|string', // Ginawang string kung may leading zeros
+        'scid_number' => 'required|string', // Ginawang string kung may leading zeros
         'gender' => 'required|string|max:255',
         'senior_contact_number' => 'required|string', // String para sa contact numbers
         'last_name' => 'required|string|max:255',

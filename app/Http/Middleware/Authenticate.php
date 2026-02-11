@@ -16,6 +16,7 @@ class Authenticate extends Middleware
     {
         if (! $request->expectsJson()) {
            return route('AuthorizationController');
+         
         }
         // For API requests, return null, which results in a 401 Unauthorized response.
     return null;

@@ -99,13 +99,13 @@ class ApplicationsController extends Controller
      * PUT /api/applications/{application}
      * Admin Action: Approve/Disapprove Application
      */
-   public function update(Request $request, Application $application)
+  public function update(Request $request, Application $application)
 {
     // 1. KILALANIN ANG USER AT ROLE
     $user = $request->user()->load('roleRelation');
     $roleName = strtolower(optional($user->roleRelation)->name);
 
-    // 2. HIGPITAN ANG ACCESS: Admin at Super Admin lang ang pwede rito
+    // 2. HIGPITAN ANG ACCESS: Admin at Super Admin lang ang pwede
     $authorizedRoles = ['admin', 'super admin'];
     if (!in_array($roleName, $authorizedRoles)) {
         return response()->json([
@@ -114,17 +114,17 @@ class ApplicationsController extends Controller
         ], 403);
     }
 
-    // 3. VALIDATION
+    // 3. VALIDATION (Siguraduhin ang case-sensitivity ng 'approved')
     $validated = $request->validate([
-        'status' => 'required|in:Approved,Disapproved,Pending',
-        'reason_for_disapproval' => 'required_if:status,Disapproved|string|nullable',
+        'status' => 'required|in:approved,disapproved,Pending',
+        'reason_for_disapproval' => 'required_if:status,disapproved|string|nullable',
     ]);
 
     try {
         // 4. TRANSACTION
         DB::transaction(function () use ($request, $application, $validated) {
             
-            // I-update ang status ng original application record (Hindi ito buburahin)
+            // I-update muna ang status ng original application record
             $application->update([
                 'status' => $validated['status'],
                 'reviewed_by' => $request->user()->name,
@@ -132,12 +132,26 @@ class ApplicationsController extends Controller
                 'reason_for_disapproval' => $validated['reason_for_disapproval'] ?? null,
             ]);
 
-            if ($validated['status'] === 'Approved') {
-                // Check kung may existing user na para hindi mag-duplicate kung i-approve ulit
+            // DITO DAPAT ANG IF CONDITION PARA SA APPROVED
+            if ($validated['status'] === 'approved') {
+                
+                // Check kung may existing user na base sa email
                 $existingUser = User::where('email', $application->email)->first();
                 
                 if (!$existingUser) {
-                    // Logic para sa account creation
+                    // --- STEP A: GENERATE UNIQUE SCID_NUMBER ---
+                    $scidNumber = null;
+                    $isUnique = false;
+
+                    while (!$isUnique) {
+                        $scidNumber = now()->year . '-' . rand(10000, 99999);
+                        $check = Masterlist::where('scid_number', $scidNumber)->exists();
+                        if (!$check) {
+                            $isUnique = true;
+                        }
+                    }
+
+                    // --- STEP B: CREATE USER ACCOUNT ---
                     $tempPassword = 'User' . now()->year . '!'; 
                     $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
 
@@ -149,9 +163,12 @@ class ApplicationsController extends Controller
                         'role'     => 3, // Citizen Role
                     ]);
 
-                    // Pag-create ng COPY sa Masterlist
+                    // --- STEP C: CREATE MASTERLIST ENTRY ---
+                    // Siniguradong lahat ng fields ay fillable sa Model
                     Masterlist::create([
                         'user_id'           => $newUser->id,
+                        'id_status'         => $application->id_status,
+                        'scid_number'       => $scidNumber,
                         'first_name'        => $application->first_name,
                         'last_name'         => $application->last_name,
                         'email'             => $application->email,
@@ -164,7 +181,7 @@ class ApplicationsController extends Controller
                         'civil_status'      => $application->civil_status,
                         'citizenship'       => $application->citizenship,
                         'status'            => 'Active',
-                        'date_submitted'    => $application->date_submitted,
+                        'date_submitted'    => $application->date_submitted ?? now(),
                     ]);
                 }
             }
@@ -172,14 +189,14 @@ class ApplicationsController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Application updated and copied to Masterlist successfully.'
+            'message' => 'Application updated. If approved, user account and masterlist entry were created.'
         ]);
 
     } catch (\Exception $e) {
+        // I-return ang specific error message para madali i-debug
         return response()->json(['error' => 'Failed: ' . $e->getMessage()], 500);
     }
 }
-
     /**
      * DELETE /api/applications/{application}
      */
