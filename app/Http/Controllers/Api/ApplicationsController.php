@@ -164,25 +164,28 @@ class ApplicationsController extends Controller
                     ]);
 
                     // --- STEP C: CREATE MASTERLIST ENTRY ---
-                    // Siniguradong lahat ng fields ay fillable sa Model
-                    Masterlist::create([
-                        'user_id'           => $newUser->id,
-                        'id_status'         => $application->id_status,
-                        'scid_number'       => $scidNumber,
-                        'first_name'        => $application->first_name,
-                        'last_name'         => $application->last_name,
-                        'email'             => $application->email,
-                        'barangay'          => $application->barangay,
-                        'city_municipality' => $application->city_municipality,
-                        'province'          => $application->province,
-                        'district'          => $application->district,
-                        'birthdate'         => $application->birthdate,
-                        'gender'            => $application->gender,
-                        'civil_status'      => $application->civil_status,
-                        'citizenship'       => $application->citizenship,
-                        'status'            => 'Active',
-                        'date_submitted'    => $application->date_submitted ?? now(),
-                    ]);
+                    // Sinisiguro natin na ang 'id_status' na ipapasok ay 'pending'
+                    // AT dapat ang 'pending' ay nage-exist na sa id_issuance table.
+
+Masterlist::create([
+    'user_id'           => $newUser->id,
+    'id_status'         => 'pending', // Ito ang FK sa id_issuance.status
+    'scid_number'       => $scidNumber,
+    'first_name'        => $application->first_name,
+    'last_name'         => $application->last_name,
+    'email'             => $application->email,
+    'contact_number'    => $application->contact_number, // Idagdag mo ito!
+    'barangay'          => $application->barangay,
+    'city_municipality' => $application->city_municipality,
+    'province'          => $application->province,
+    'district'          => $application->district,
+    'birthdate'         => $application->birthdate,
+    'gender'            => $application->gender,
+    'civil_status'      => $application->civil_status,
+    'citizenship'       => $application->citizenship,
+    'status'            => 'Active', // Ito ang internal status ng citizen
+    'date_submitted'    => $application->date_submitted ?? now(),
+]);
                 }
             }
         });
