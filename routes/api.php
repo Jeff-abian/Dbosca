@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\MasterlistController;
 use App\Http\Controllers\Api\IdIssuanceController;
 use App\Http\Controllers\Api\IdRenewalsController;
 use App\Http\Controllers\Api\IdReplacementController;
+use App\Http\Controllers\Api\RegistryProxyController;
 
 
 
@@ -42,6 +43,7 @@ Route::post('/applications', [ApplicationsController::class, 'store']);
 Route::middleware('auth:sanctum')->group(function () {
 
     Route::apiResource('masterlist', MasterlistController::class);
+    Route::get('/proxy/{type}', [RegistryProxyController::class, 'fetchRecords']);
     Route::apiResource('id-renewal', IdRenewalsController::class);
     Route::apiResource('id-issuances', IdIssuanceController::class);
     Route::apiResource('id-replacements', IdReplacementController::class);
