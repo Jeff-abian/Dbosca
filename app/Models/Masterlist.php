@@ -23,29 +23,9 @@ class Masterlist extends Model
     const UPDATED_AT = 'last_updated';
 
     protected $fillable = [
-        'user_id',
-        'scid_number',
-        'last_name',
-        'first_name',
-        'middle_name',
-        'suffix',
-        'citizenship',
-        'house_no',
-        'street',
-        'barangay',
-        'city_municipality',
-        'province',
-        'district',
-        'age',
-        'gender',
-        'civil_status',
-        'birthdate',
-        'birthplace',
-        'living_arrangement',
-        'date_submitted',
-        'applicant_signature_image',
-        'received_by',
-        'status',
-        'email'
-    ];
+    'user_id', 'id_status', 'scid_number', 'first_name', 'last_name','middle_name','age',
+    'email', 'contact_number', 'birthdate', 'birthplace', 'gender', 
+    'civil_status', 'citizenship', 'house_no', 'street', 'barangay', 
+    'city_municipality', 'province', 'district', 'status', 'date_submitted'
+];
 }

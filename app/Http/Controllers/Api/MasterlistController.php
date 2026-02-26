@@ -107,6 +107,12 @@ class MasterlistController extends Controller
      */
     public function update(Request $request, $id)
     {
+        // Sa loob ng iyong update method (Approval logic)
+Masterlist::create([
+    // ... ibang fields
+    'document_path' => $application->document_path, // Kunin mula sa application record
+    // ...
+]);
         // Hanapin gamit ang citizen_id
         $record = Masterlist::where('citizen_id', $id)->first();
 

@@ -7,10 +7,10 @@ use App\Models\Application;
 use App\Models\User;
 use App\Models\Masterlist;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Exception;
 
 class ApplicationsController extends Controller
 {
@@ -22,7 +22,6 @@ class ApplicationsController extends Controller
     {
         $user = $request->user()->load('roleRelation');
         $roleName = strtolower(optional($user->roleRelation)->name);
-
         $allowedRoles = ['admin', 'super admin'];
 
         if (!$user || !in_array($roleName, $allowedRoles)) {
@@ -55,34 +54,43 @@ class ApplicationsController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'last_name' => 'required|string|max:255',
-            'first_name' => 'required|string|max:255',
-            'middle_name' => 'nullable|string|max:255',
-            'suffix'     => 'nullable|string|max:10',
-            'email' => 'required|email|max:255',
-            'contact_number' => 'required|string|max:20',
-            'citizenship'=> 'required|string|max:255',
-            'house_no'=> 'required|string|max:255',
-            'street' => 'required|string|max:255',
-            'barangay' => 'required|string|max:255',
+            'last_name'         => 'required|string|max:255',
+            'first_name'        => 'required|string|max:255',
+            'middle_name'       => 'nullable|string|max:255',
+            'suffix'            => 'nullable|string|max:10',
+            'email'             => 'required|email|max:255',
+            'contact_number'    => 'required|string|max:20',
+            'citizenship'       => 'required|string|max:255',
+            'house_no'          => 'required|string|max:255',
+            'street'            => 'required|string|max:255',
+            'barangay'          => 'required|string|max:255',
             'city_municipality' => 'required|string|max:255',
-            'province' => 'required|string|max:255',
-            'district' => 'required|string|max:255',
-            'age' => 'required|integer',
-            'gender' => 'required|string',
-            'civil_status' => 'required|string',
-            'birthdate' => 'required|date',
-            'birthplace' => 'required|string',
-            'living_arrangement' => 'required|string',
-            'is_pensioner' => 'required|boolean',
-            'pension_source' => 'nullable|string',
-            'pension_amount' => 'nullable|string',
-            'has_illness' => 'required|boolean',
-            'illness_details' => 'nullable|string',
-            'document_url' => 'required|string',
-            'application_type' => 'required|string',
-        
+            'province'          => 'required|string|max:255',
+            'district'          => 'required|string|max:255',
+            'age'               => 'required|integer',
+            'gender'            => 'required|string',
+            'civil_status'      => 'required|string',
+            'birthdate'         => 'required|date',
+            'birthplace'        => 'required|string',
+            'living_arrangement'=> 'required|string',
+            'is_pensioner'      => 'required|boolean',
+            'pension_source'    => 'nullable|string',
+            'pension_amount'    => 'nullable|string',
+            'has_illness'       => 'required|boolean',
+            'illness_details'   => 'nullable|string',
+            'document_url'      => 'required|string',
+            'application_type'  => 'required|string',
+            'document_file'  => 'required|file|mimes:pdf,jpg,png|max:5120', // Validation para sa physical file
         ]);
+
+        // Sa iyong store method
+if ($request->hasFile('document_file')) {
+    // I-save ang file sa storage/app/public/attachments
+    $path = $request->file('document_file')->store('attachments', 'public');
+    
+    // Ang 'path' ay magiging: "attachments/filename.pdf"
+    $validated['document_path'] = $path;
+}
 
         $validated['status'] = 'Pending';
         $validated['date_submitted'] = now();
@@ -99,134 +107,125 @@ class ApplicationsController extends Controller
      * PUT /api/applications/{application}
      * Admin Action: Approve/Disapprove Application
      */
-  public function update(Request $request, Application $application)
-{
-    // 1. KILALANIN ANG USER AT ROLE
-    $user = $request->user()->load('roleRelation');
-    $roleName = strtolower(optional($user->roleRelation)->name);
+    public function update(Request $request, Application $application)
+    {
+        $user = $request->user()->load('roleRelation');
+        $roleName = strtolower(optional($user->roleRelation)->name);
+        $authorizedRoles = ['admin', 'super admin'];
 
-    // 2. HIGPITAN ANG ACCESS: Admin at Super Admin lang ang pwede
-    $authorizedRoles = ['admin', 'super admin'];
-    if (!in_array($roleName, $authorizedRoles)) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Unauthorized: Only Admins or Super Admins can update application status.'
-        ], 403);
-    }
+        if (!in_array($roleName, $authorizedRoles)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized: Access denied.'
+            ], 403);
+        }
 
-    // 3. VALIDATION (Siguraduhin ang case-sensitivity ng 'approved')
-    $validated = $request->validate([
-        'status' => 'required|in:approved,disapproved,Pending',
-        'reason_for_disapproval' => 'required_if:status,disapproved|string|nullable',
-    ]);
+        $validated = $request->validate([
+            'status' => 'required|in:approved,disapproved,Pending',
+            'reason_for_disapproval' => 'required_if:status,disapproved|string|nullable',
+        ]);
 
-    try {
-        // 4. TRANSACTION
-        DB::transaction(function () use ($request, $application, $validated) {
-            
-            // I-update muna ang status ng original application record
-            $application->update([
-                'status' => $validated['status'],
-                'reviewed_by' => $request->user()->name,
-                'date_reviewed' => now(),
-                'reason_for_disapproval' => $validated['reason_for_disapproval'] ?? null,
-            ]);
-
-            // DITO DAPAT ANG IF CONDITION PARA SA APPROVED
-            if ($validated['status'] === 'approved') {
+        try {
+            DB::transaction(function () use ($request, $application, $validated) {
                 
-                // Check kung may existing user na base sa email
-                $existingUser = User::where('email', $application->email)->first();
-                
-                if (!$existingUser) {
-                    // --- STEP A: GENERATE UNIQUE SCID_NUMBER ---
+                // 1. I-update ang Application status
+                $application->update([
+                    'status' => $validated['status'],
+                    'reviewed_by' => $request->user()->name,
+                    'date_reviewed' => now(),
+                    'reason_for_disapproval' => $validated['reason_for_disapproval'] ?? null,
+                ]);
+
+                // 2. Logic kapag APPROVED
+                if (strtolower($validated['status']) === 'approved') {
+                    
+                    // Check kung may existing user na base sa email
+                    $existingUser = User::where('email', $application->email)->first();
+                    $targetUserId = null;
+
+                    if (!$existingUser) {
+                        // Gawa ng bagong User account
+                        $tempPassword = 'User' . now()->year . '!'; 
+                        $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
+
+                        $newUser = User::create([
+                            'name'     => $application->first_name . ' ' . $application->last_name,
+                            'email'    => $application->email,
+                            'username' => $username,
+                            'password' => Hash::make($tempPassword),
+                            'role'     => 3, // Citizen Role
+                        ]);
+                        $targetUserId = $newUser->id;
+                    } else {
+                        $targetUserId = $existingUser->id;
+                    }
+
+                    // 3. Generate Unique SCID Number
                     $scidNumber = null;
                     $isUnique = false;
-
                     while (!$isUnique) {
                         $scidNumber = now()->year . '-' . rand(10000, 99999);
-                        $check = Masterlist::where('scid_number', $scidNumber)->exists();
-                        if (!$check) {
+                        if (!Masterlist::where('scid_number', $scidNumber)->exists()) {
                             $isUnique = true;
                         }
                     }
 
-                    // --- STEP B: CREATE USER ACCOUNT ---
-                    $tempPassword = 'User' . now()->year . '!'; 
-                    $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
-
-                    $newUser = User::create([
-                        'name'     => $application->first_name . ' ' . $application->last_name,
-                        'email'    => $application->email,
-                        'username' => $username,
-                        'password' => Hash::make($tempPassword),
-                        'role'     => 3, // Citizen Role
+                    // 4. Create Masterlist Entry
+                    Masterlist::create([
+                        'user_id'           => $targetUserId,
+                        'id_status'         => 'pending', 
+                        'scid_number'       => $scidNumber,
+                        'first_name'        => $application->first_name,
+                        'age'               => $application->age,
+                        'last_name'         => $application->last_name,
+                        'middle_name'       => $application->middle_name,
+                        'email'             => $application->email,
+                        'contact_number'    => $application->contact_number, // <--- ADDED
+                        'birthdate'         => $application->birthdate,
+                        'birthplace'        => $application->birthplace,     // <--- ADDED
+                        'gender'            => $application->gender,
+                        'civil_status'      => $application->civil_status,
+                        'citizenship'       => $application->citizenship,
+                        'house_no'          => $application->house_no,       // <--- ADDED
+                        'street'            => $application->street,         // <--- ADDED
+                        'barangay'          => $application->barangay,
+                        'city_municipality' => $application->city_municipality,
+                        'province'          => $application->province,
+                        'district'          => $application->district,
+                        'status'            => 'Active',
+                        'date_submitted'    => $application->date_submitted ?? now(),
+                        'document_path' => $application->document_path, // Dito lilipat ang reference ng file
                     ]);
-
-                    // --- STEP C: CREATE MASTERLIST ENTRY ---
-                    // Sinisiguro natin na ang 'id_status' na ipapasok ay 'pending'
-                    // AT dapat ang 'pending' ay nage-exist na sa id_issuance table.
-
-Masterlist::create([
-    'user_id'           => $newUser->id,
-    'id_status'         => 'pending', // Ito ang FK sa id_issuance.status
-    'scid_number'       => $scidNumber,
-    'first_name'        => $application->first_name,
-    'last_name'         => $application->last_name,
-    'email'             => $application->email,
-    'contact_number'    => $application->contact_number, // Idagdag mo ito!
-    'barangay'          => $application->barangay,
-    'city_municipality' => $application->city_municipality,
-    'province'          => $application->province,
-    'district'          => $application->district,
-    'birthdate'         => $application->birthdate,
-    'gender'            => $application->gender,
-    'civil_status'      => $application->civil_status,
-    'citizenship'       => $application->citizenship,
-    'status'            => 'Active', // Ito ang internal status ng citizen
-    'date_submitted'    => $application->date_submitted ?? now(),
-]);
                 }
-            }
-        });
+            });
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Application updated. If approved, user account and masterlist entry were created.'
-        ]);
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Application updated. If approved, data is now in Masterlist.'
+            ]);
 
-    } catch (\Exception $e) {
-        // I-return ang specific error message para madali i-debug
-        return response()->json(['error' => 'Failed: ' . $e->getMessage()], 500);
+        } catch (Exception $e) {
+            return response()->json(['error' => 'Failed: ' . $e->getMessage()], 500);
+        }
     }
-}
+
     /**
      * DELETE /api/applications/{application}
      */
     public function destroy(Request $request, Application $application)
-{
-    // 1. Kilalanin ang user at kunin ang role name
-    $user = $request->user()->load('roleRelation');
-    $roleName = strtolower(optional($user->roleRelation)->name);
+    {
+        $user = $request->user()->load('roleRelation');
+        $roleName = strtolower(optional($user->roleRelation)->name);
 
-    // 2. I-define ang authorized roles para sa pagbubura
-    $authorizedRoles = ['admin', 'super admin'];
+        if (!in_array($roleName, ['admin', 'super admin'])) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
 
-    // 3. Security Guard: Check kung authorized ang role
-    if (!in_array($roleName, $authorizedRoles)) {
+        $application->delete();
+
         return response()->json([
-            'status' => 'error',
-            'message' => 'Unauthorized: Only Admins and Super Admins can delete application records.',
-            'your_role' => $roleName
-        ], 403); // 403 Forbidden
+            'status' => 'success',
+            'message' => 'Application record has been successfully deleted.'
+        ]);
     }
-
-    // 4. Isagawa ang pagbura kung pumasa sa role check
-    $application->delete();
-
-    return response()->json([
-        'status' => 'success',
-        'message' => 'Application record has been successfully deleted.'
-    ], 200);
-}
 }

@@ -55,6 +55,7 @@ class Application extends Model
     'document_url',
     'application_type',
     'status',
+    'document_path',
 ];
 
 
