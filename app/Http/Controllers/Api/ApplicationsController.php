@@ -80,13 +80,13 @@ class ApplicationsController extends Controller
             'illness_details'   => 'nullable|string',
             'document_url'      => 'required|string',
             'application_type'  => 'required|string',
-            'document_file'  => 'required|file|mimes:pdf,jpg,png|max:5120', // Validation para sa physical file
+            'document_path'  => 'required|file|mimes:pdf,jpg,png|max:5120', // Validation para sa physical file
         ]);
 
         // Sa iyong store method
-if ($request->hasFile('document_file')) {
+if ($request->hasFile('document_path')) {
     // I-save ang file sa storage/app/public/attachments
-    $path = $request->file('document_file')->store('attachments', 'public');
+    $path = $request->file('document_path')->store('attachments', 'public');
     
     // Ang 'path' ay magiging: "attachments/filename.pdf"
     $validated['document_path'] = $path;
