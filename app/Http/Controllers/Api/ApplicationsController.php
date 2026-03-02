@@ -173,7 +173,7 @@ if ($request->hasFile('document_path')) {
                     // 4. Create Masterlist Entry
                     Masterlist::create([
                         'user_id'           => $targetUserId,
-                        'id_status'         => 'pending', 
+                        'id_status'         => 'new', 
                         'scid_number'       => $scidNumber,
                         'first_name'        => $application->first_name,
                         'age'               => $application->age,

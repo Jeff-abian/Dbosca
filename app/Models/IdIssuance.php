@@ -14,11 +14,11 @@ class IdIssuance extends Model
     const UPDATED_AT = 'last_updated';
 
     protected $fillable = [
-        'issuance_id','citizen_id', 'scid_number','user_id','senior_contact_number', 'last_name', 'first_name', 'middle_name', 'suffix','birthdate','place_of_birth',
+        'issuance_id','citizen_id', 'scid_number','user_id','emergency_contact_number', 'last_name', 'first_name', 'middle_name', 'suffix','birthdate','place_of_birth',
         'citizenship','house_no','street','barangay','city_municipality',
         'province', 'district', 'age', 'gender', 'civil_status','emergency_contact_person','contact_number','willing_member',
         'birthplace', 'living_arrangement', 'date_submitted', 
-        'received_by', 'status', 'email','willing_member','approved_date','submitted_date','approved_at','issued_date','released_date','photo_url','req1_url', 'req2_url'
+        'received_by', 'id_status', 'email','willing_member','approved_date','submitted_date','approved_at','issued_date','released_date','photo_url','req1_url', 'req2_url','date_created','last_updated'
     ];
 
     // Relationship sa User model

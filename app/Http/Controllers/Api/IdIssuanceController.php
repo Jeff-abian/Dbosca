@@ -32,7 +32,7 @@ class IdIssuanceController extends Controller
 
     // 4. I-return ang result
     return response()->json([
-        'status' => 'success',
+        'id_status' => 'success',
         'role_accessed' => $roleName,
         'data' => $data
     ]);
@@ -52,7 +52,7 @@ class IdIssuanceController extends Controller
 
     if (!$masterlist) {
         return response()->json([
-            'status' => 'error',
+            'id_status' => 'error',
             'message' => 'User record not found in Masterlist.'
         ], 404);
     }
@@ -61,7 +61,7 @@ class IdIssuanceController extends Controller
     $validated = $request->validate([
         'scid_number' => 'required|string', // Ginawang string kung may leading zeros
         'gender' => 'required|string|max:255',
-        'senior_contact_number' => 'required|string', // String para sa contact numbers
+        'contact_number' => 'required|string', // String para sa contact numbers
         'last_name' => 'required|string|max:255',
         'first_name' => 'required|string|max:255',
         'middle_name' => 'nullable|string|max:255',
@@ -78,7 +78,7 @@ class IdIssuanceController extends Controller
         'citizenship' => 'required|string',
         'civil_status' => 'required|string',
         'emergency_contact_person' => 'required|string',
-        'contact_number' => 'required|string',
+        'emergency_contact_number' => 'required|string',
         'willing_member' => 'required|string',
         'email' => 'required|email',
         'photo_url' => 'required|string',
@@ -97,7 +97,7 @@ class IdIssuanceController extends Controller
     // Ang issuance_id ay hindi na isasama rito dahil AUTO-INCREMENT ito sa database
     $validated['user_id'] = $user->id; 
     $validated['citizen_id'] = $masterlist->citizen_id; // Foreign Key mula sa Masterlist
-    $validated['status'] = 'Pending'; // Default status para sa bagong request
+    $validated['id_status'] = 'Pending'; // Default status para sa bagong request
     $validated['submitted_date'] = now();
 
     $issuance = \App\Models\IdIssuance::create($validated);
@@ -117,7 +117,7 @@ class IdIssuanceController extends Controller
                             ->where('user_id', auth()->id())
                             ->firstOrFail();
 
-        return response()->json(['status' => 'success', 'data' => $record]);
+        return response()->json(['id_status' => 'success', 'data' => $record]);
     }
 
     /**

@@ -4,14 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Masterlist;
+use App\Models\IdIssuance; 
 use App\Http\Resources\MasterlistResource;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MasterlistController extends Controller
 {
-    /**
-     * Helper function para i-check kung ang user ay Admin o Super Admin
-     */
     private function isAuthorizedAdmin(Request $request)
     {
         $user = $request->user()->load('roleRelation');
@@ -19,145 +18,137 @@ class MasterlistController extends Controller
         return in_array($roleName, ['admin', 'super admin']);
     }
 
-    /**
-     * GET /api/masterlist
-     */
     public function index(Request $request)
     {
         $user = $request->user();
         $roleName = strtolower($user->roleRelation->name ?? '');
 
         if (in_array($roleName, ['admin', 'super admin'])) {
-            // Admin: Kita lahat
             $data = Masterlist::all();
         } else {
-            // Citizen: Kita lang ang sariling record gamit ang 'id'
             $data = Masterlist::where('user_id', $user->id)->get();
         }
 
         if ($data->isEmpty()) {
-            return response()->json([
-                'message' => 'No records found.',
-                'role_detected' => $roleName
-            ], 200);
+            return response()->json(['message' => 'No records found.'], 200);
         }
 
         return MasterlistResource::collection($data);
     }
 
     /**
-     * GET /api/masterlist/{id}
-     */
-    public function show(Request $request, $id)
-    {
-        $record = Masterlist::where('citizen_id', $id)->first();
-
-        if (!$record) {
-            return response()->json(['message' => 'Record not found.'], 404);
-        }
-
-        // Check kung Admin OR kung siya ang owner (Gamit ang $user->id)
-        if (!$this->isAuthorizedAdmin($request) && $record->user_id != $request->user()->id) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized access.'
-            ], 403);
-        }
-
-        return new MasterlistResource($record);
-    }
-
-    /**
      * POST /api/masterlist
+     * DEFAULT: Ang id_status ay itatakda bilang 'new' sa pag-create.
      */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'scid_number' => 'required|string|unique:masterlist,scid_number', // Ginawang string at unique
-            'id_status' => 'required|exists:id_issuance,status',
-            'citizenship' => 'required|string|max:255',
-            'barangay' => 'required|string|max:255',
-            'city_municipality' => 'required|string|max:255',
-            'civil_status' => 'required|string|max:255',
-            'district' => 'required|string|max:255',
-            'province' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'first_name' => 'required|string|max:255',
-            'email' => 'required|email|max:255',
-            'gender' => 'required|string',
-            'status' => 'required|string',
-            'birthdate' => 'required|date',
-            'birthplace' => 'required|string',
+            'scid_number'       => 'required|string|unique:masterlist,scid_number',
+            'id_status'         => 'nullable|in:new,pending,approved,rejected,released',
+            'citizenship'       => 'required|string',
+            'barangay'          => 'required|string',
+            'city_municipality' => 'required|string',
+            'civil_status'      => 'required|string',
+            'district'          => 'required|string',
+            'province'          => 'required|string',
+            'last_name'         => 'required|string',
+            'first_name'        => 'required|string',
+            'email'             => 'required|email',
+            'gender'            => 'required|string',
+            'birthdate'         => 'required|date',
+            'birthplace'        => 'required|string',
+            'contact_number'    => 'nullable|string',
         ]);
 
-        $validated['user_id'] = $request->user()->id; // TAMA: $user->id
-        $validated['date_submitted'] = now();
+        return DB::transaction(function () use ($request, $validated) {
+            $validated['user_id'] = $request->user()->id;
+            $validated['date_submitted'] = now();
+            
+            // STEP 1: Default status is 'new' upon entry to masterlist
+            $validated['id_status'] = $validated['id_status'] ?? 'new';
 
-        $record = Masterlist::create($validated);
+            $record = Masterlist::create($validated);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Record created successfully.',
-            'data' => $record
-        ], 201);
+            // STEP 2: TRIGGER POINT - Kung sakaling isinave ito agad bilang 'pending'
+            if ($record->id_status === 'pending') {
+                $this->triggerIdIssuance($record);
+            }
+
+            return response()->json(['status' => 'success', 'data' => $record], 201);
+        });
     }
 
     /**
      * PUT /api/masterlist/{id}
+     * TRIGGER: Kapag ang status ay binago patungong 'pending'.
      */
     public function update(Request $request, $id)
     {
-        // Sa loob ng iyong update method (Approval logic)
-Masterlist::create([
-    // ... ibang fields
-    'document_path' => $application->document_path, // Kunin mula sa application record
-    // ...
-]);
-        // Hanapin gamit ang citizen_id
         $record = Masterlist::where('citizen_id', $id)->first();
 
         if (!$record) {
             return response()->json(['message' => 'Record not found.'], 404);
         }
 
-        // Autorization check
         if (!$this->isAuthorizedAdmin($request) && $record->user_id != $request->user()->id) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        // I-update gamit ang request data
-        $record->update($request->all());
+        return DB::transaction(function () use ($request, $record) {
+            $oldStatus = $record->id_status;
+            $record->update($request->all());
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Record updated successfully.',
-            'data' => $record
-        ]);
+            // TRIGGER POINT: Transition to 'pending'
+            if ($oldStatus !== 'pending' && $record->id_status === 'pending') {
+                $this->triggerIdIssuance($record);
+            }
+
+            return response()->json(['status' => 'success', 'data' => $record]);
+        });
     }
 
     /**
-     * DELETE /api/masterlist/{id}
+     * Helper function para sa ID Issuance Entry
+     * Nilulutas nito ang Error 1364 at Error 1054
      */
+   private function triggerIdIssuance($record)
+{
+    IdIssuance::updateOrCreate(
+        ['scid_number' => $record->scid_number],
+        [
+            'status'                => 'pending',
+            'date_applied'          => now(),
+            // Idagdag ang mga fields na ito para mawala ang Error 1364
+            'last_name'             => $record->last_name, 
+            'first_name'            => $record->first_name,
+            'middle_name'            => $record->middle_name,
+            'birthdate'            => $record->birthdate,
+            'place_of_birth'            => $record->birthplace,
+            'house_no'                  => $record->house_no,
+            'street'                  => $record->street,
+            'barangay'                => $record->barangay,
+            'city_municipality'       => $record->city_municipality,
+            'province'       => $record->province,
+            'district'       => $record->district,
+            'citizenship'    => $record->citizenship,
+            'civil_status'   => $record->civil_status,
+            'willing_member' => $record->willing_member,
+            'emergency_contact_person' => $record->contact_person,
+            'emergency_contact_number' => $record->contact_number ?? 'N/A', 
+            // Fix para sa timestamp columns (Error 1054)
+            'date_created'          => now(),
+            'last_updated'          => now(),
+        ]
+    );
+}
+
     public function destroy(Request $request, $id)
     {
         $record = Masterlist::where('citizen_id', $id)->first();
-
-        if (!$record) {
-            return response()->json(['message' => 'Record not found.'], 404);
-        }
-
-        if (!$this->isAuthorizedAdmin($request) && $record->user_id != $request->user()->id) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized to delete this record.'
-            ], 403);
-        }
+        if (!$record) return response()->json(['message' => 'Not found.'], 404);
+        if (!$this->isAuthorizedAdmin($request)) return response()->json(['message' => 'Admin only.'], 403);
 
         $record->delete();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Record deleted successfully.'
-        ]);
+        return response()->json(['status' => 'success', 'message' => 'Deleted.']);
     }
 }
