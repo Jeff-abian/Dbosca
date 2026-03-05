@@ -16,7 +16,7 @@ class ApplicationsController extends Controller
 {
     /**
      * GET /api/applications
-     * Restricted: Admin and Super Admin only
+     * Ginagamit ang 'reg_status' at 'date_created' para sa sorting.
      */
     public function index(Request $request)
     {
@@ -34,11 +34,13 @@ class ApplicationsController extends Controller
         $status = $request->query('status', 'All');
         $query = Application::query();
 
+        // Updated: 'reg_status' ang column name na ngayon
         if ($status !== 'All') {
-            $query->where('status', $status);
+            $query->where('reg_status', $status);
         }
 
-        $applications = $query->orderBy('date_submitted', 'desc')->paginate(15);
+        // Fix para sa Timeout: Paginate(15) at tamang sorting column
+        $applications = $query->orderBy('date_created', 'desc')->paginate(15);
 
         return response()->json([
             'status' => true,
@@ -49,51 +51,56 @@ class ApplicationsController extends Controller
 
     /**
      * POST /api/applications
-     * PUBLIC: Submission of application
+     * Updated validation based sa iyong bagong column list.
      */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'last_name'         => 'required|string|max:255',
-            'first_name'        => 'required|string|max:255',
-            'middle_name'       => 'nullable|string|max:255',
-            'suffix'            => 'nullable|string|max:10',
-            'email'             => 'required|email|max:255',
-            'contact_number'    => 'required|string|max:20',
-            'citizenship'       => 'required|string|max:255',
-            'house_no'          => 'required|string|max:255',
-            'street'            => 'required|string|max:255',
-            'barangay'          => 'required|string|max:255',
-            'city_municipality' => 'required|string|max:255',
-            'province'          => 'required|string|max:255',
-            'district'          => 'required|string|max:255',
-            'age'               => 'required|integer',
-            'gender'            => 'required|string',
-            'civil_status'      => 'required|string',
-            'birthdate'         => 'required|date',
-            'birthplace'        => 'required|string',
-            'living_arrangement'=> 'required|string',
-            'is_pensioner'      => 'required|boolean',
-            'pension_source'    => 'nullable|string',
-            'pension_amount'    => 'nullable|string',
-            'has_illness'       => 'required|boolean',
-            'illness_details'   => 'nullable|string',
-            'document_url'      => 'required|string',
-            'application_type'  => 'required|string',
-            'document_path'  => 'required|file|mimes:pdf,jpg,png|max:5120', // Validation para sa physical file
+            'last_name'                  => 'required|string|max:255',
+            'first_name'                 => 'required|string|max:255',
+            'middle_name'                => 'nullable|string|max:255',
+            'suffix'                     => 'nullable|string|max:10',
+            'birth_date'                 => 'required|date',
+            'age'                        => 'required|integer',
+            'sex'                        => 'required|string',
+            'civil_status'               => 'required|string',
+            'citizenship'                => 'required|string',
+            'birth_place'                => 'required|string',
+            'address'                    => 'required|string',
+            'barangay'                   => 'required|string',
+            'city_municipality'          => 'required|string',
+            'district'                   => 'required|string',
+            'province'                   => 'required|string',
+            'email'                      => 'required|email|max:255',
+            'contact_number'             => 'required|string|max:20',
+            'living_arrangement'         => 'required|string',
+            'is_pensioner'               => 'nullable|boolean',
+            'pension_source_gsis'        => 'nullable|boolean',
+            'pension_source_sss'         => 'nullable|boolean',
+            'pension_source_afpslai'     => 'nullable|boolean',
+            'pension_source_others'      => 'nullable|string',
+            'pension_amount'             => 'nullable|numeric',
+            'has_permanent_income'       => 'nullable|boolean',
+            'permanent_income_source'    => 'nullable|string',
+            'has_regular_support'        => 'nullable|boolean',
+            'support_type_cash'          => 'nullable|boolean',
+            'support_cash_amount'        => 'nullable|numeric',
+            'support_cash_frequency'     => 'nullable|string',
+            'support_type_inkind'        => 'nullable|boolean',
+            'kind_support_details'       => 'nullable|string',
+            'has_illness'                => 'required|boolean',
+            'illness_details'            => 'nullable|string',
+            'hospitalized_last_6_months' => 'nullable|boolean',
+            'registration_type'          => 'required|string',
+            'document_path'              => 'nullable|file|mimes:pdf,jpg,png|max:5120',
         ]);
 
-        // Sa iyong store method
-if ($request->hasFile('document_path')) {
-    // I-save ang file sa storage/app/public/attachments
-    $path = $request->file('document_path')->store('attachments', 'public');
-    
-    // Ang 'path' ay magiging: "attachments/filename.pdf"
-    $validated['document_path'] = $path;
-}
+        if ($request->hasFile('document_path')) {
+            $validated['document_path'] = $request->file('document_path')->store('attachments', 'public');
+        }
 
-        $validated['status'] = 'Pending';
-        $validated['date_submitted'] = now();
+        $validated['reg_status'] = 'Pending';
+        $validated['date_created'] = now();
 
         Application::create($validated);
 
@@ -105,46 +112,40 @@ if ($request->hasFile('document_path')) {
 
     /**
      * PUT /api/applications/{application}
-     * Admin Action: Approve/Disapprove Application
+     * TRIGGER: Pag-sync ng data sa Masterlist gamit ang bagong column names.
      */
     public function update(Request $request, Application $application)
     {
         $user = $request->user()->load('roleRelation');
         $roleName = strtolower(optional($user->roleRelation)->name);
-        $authorizedRoles = ['admin', 'super admin'];
-
-        if (!in_array($roleName, $authorizedRoles)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized: Access denied.'
-            ], 403);
+        
+        if (!in_array($roleName, ['admin', 'super admin'])) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
         }
 
         $validated = $request->validate([
-            'status' => 'required|in:approved,disapproved,Pending',
-            'reason_for_disapproval' => 'required_if:status,disapproved|string|nullable',
+            'reg_status' => 'required|in:approved,disapproved,Pending',
+            'rejection_remarks' => 'required_if:reg_status,disapproved|string|nullable',
         ]);
 
         try {
             DB::transaction(function () use ($request, $application, $validated) {
                 
-                // 1. I-update ang Application status
+                // 1. I-update ang Application status (Gamit ang reg_status at rejection_remarks)
                 $application->update([
-                    'status' => $validated['status'],
-                    'reviewed_by' => $request->user()->name,
-                    'date_reviewed' => now(),
-                    'reason_for_disapproval' => $validated['reason_for_disapproval'] ?? null,
+                    'reg_status'        => $validated['reg_status'],
+                    'reviewed_by'       => $request->user()->id,
+                    'date_reviewed'     => now(),
+                    'rejection_remarks' => $validated['rejection_remarks'] ?? null,
                 ]);
 
-                // 2. Logic kapag APPROVED
-                if (strtolower($validated['status']) === 'approved') {
+                // 2. Logic kapag APPROVED - Paglipat sa Masterlist
+                if (strtolower($validated['reg_status']) === 'approved') {
                     
-                    // Check kung may existing user na base sa email
                     $existingUser = User::where('email', $application->email)->first();
-                    $targetUserId = null;
+                    $targetUserId = $existingUser ? $existingUser->id : null;
 
                     if (!$existingUser) {
-                        // Gawa ng bagong User account
                         $tempPassword = 'User' . now()->year . '!'; 
                         $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
 
@@ -153,55 +154,53 @@ if ($request->hasFile('document_path')) {
                             'email'    => $application->email,
                             'username' => $username,
                             'password' => Hash::make($tempPassword),
-                            'role'     => 3, // Citizen Role
+                            'role'     => 3, // Citizen
                         ]);
                         $targetUserId = $newUser->id;
-                    } else {
-                        $targetUserId = $existingUser->id;
                     }
 
-                    // 3. Generate Unique SCID Number
-                    $scidNumber = null;
-                    $isUnique = false;
-                    while (!$isUnique) {
+                    // Generate Unique SCID
+                    $scidNumber = now()->year . '-' . rand(10000, 99999);
+                    while (Masterlist::where('scid_number', $scidNumber)->exists()) {
                         $scidNumber = now()->year . '-' . rand(10000, 99999);
-                        if (!Masterlist::where('scid_number', $scidNumber)->exists()) {
-                            $isUnique = true;
-                        }
                     }
 
-                    // 4. Create Masterlist Entry
-                    Masterlist::create([
-                        'user_id'           => $targetUserId,
-                        'id_status'         => 'new', 
-                        'scid_number'       => $scidNumber,
-                        'first_name'        => $application->first_name,
-                        'age'               => $application->age,
-                        'last_name'         => $application->last_name,
-                        'middle_name'       => $application->middle_name,
-                        'email'             => $application->email,
-                        'contact_number'    => $application->contact_number, // <--- ADDED
-                        'birthdate'         => $application->birthdate,
-                        'birthplace'        => $application->birthplace,     // <--- ADDED
-                        'gender'            => $application->gender,
-                        'civil_status'      => $application->civil_status,
-                        'citizenship'       => $application->citizenship,
-                        'house_no'          => $application->house_no,       // <--- ADDED
-                        'street'            => $application->street,         // <--- ADDED
-                        'barangay'          => $application->barangay,
-                        'city_municipality' => $application->city_municipality,
-                        'province'          => $application->province,
-                        'district'          => $application->district,
-                        'status'            => 'Active',
-                        'date_submitted'    => $application->date_submitted ?? now(),
-                        'document_path' => $application->document_path, // Dito lilipat ang reference ng file
+                    // 3. Create Masterlist Entry (Mapping sa bagong columns)
+                    // Nilulutas nito ang Error 1364 sa pamamagitan ng pagpasa ng lahat ng kailangang fields.
+    Masterlist::create([
+    'user_id'           => $targetUserId,
+    'id_status'         => 'new',
+    'scid_number'       => $scidNumber,
+    'first_name'        => $application->first_name,
+    'middle_name'       => $application->middle_name,
+    'last_name'         => $application->last_name,
+    'suffix'            => $application->suffix,
+    
+    // DAGDAGAN ITONG MGA SUMUSUNOD (Eto ang mga kulang base sa SQL error mo):
+    'birth_date'        => $application->birth_date,  // Siguraduhing may underscore
+    'birth_place'       => $application->birth_place, // Siguraduhing may underscore
+    'sex'               => $application->sex,
+    
+    'age'               => $application->age,
+    'civil_status'      => $application->civil_status,
+    'citizenship'       => $application->citizenship,
+    'address'           => $application->address,
+    'barangay'          => $application->barangay,
+    'city_municipality' => $application->city_municipality,
+    'province'          => $application->province,
+    'district'          => $application->district,
+    'contact_number'    => $application->contact_number,
+    'email'             => $application->email,
+    'document_path'     => $application->document_path,
+    'date_created'      => now(),
+    'last_updated'      => now(),
                     ]);
                 }
             });
 
             return response()->json([
-                'status' => 'success',
-                'message' => 'Application updated. If approved, data is now in Masterlist.'
+                'status' => 'success', 
+                'message' => 'Application updated and synced to Masterlist.'
             ]);
 
         } catch (Exception $e) {
@@ -209,23 +208,12 @@ if ($request->hasFile('document_path')) {
         }
     }
 
-    /**
-     * DELETE /api/applications/{application}
-     */
     public function destroy(Request $request, Application $application)
     {
-        $user = $request->user()->load('roleRelation');
-        $roleName = strtolower(optional($user->roleRelation)->name);
-
-        if (!in_array($roleName, ['admin', 'super admin'])) {
+        if (!in_array(strtolower($request->user()->roleRelation->name), ['admin', 'super admin'])) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
         }
-
         $application->delete();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Application record has been successfully deleted.'
-        ]);
+        return response()->json(['status' => 'success', 'message' => 'Deleted.']);
     }
 }

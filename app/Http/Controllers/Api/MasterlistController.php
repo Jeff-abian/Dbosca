@@ -53,23 +53,27 @@ class MasterlistController extends Controller
             'province'          => 'required|string',
             'last_name'         => 'required|string',
             'first_name'        => 'required|string',
+            'middle_name'       => 'nullable|string',
+            'suffix'            => 'nullable|string',
             'email'             => 'required|email',
-            'gender'            => 'required|string',
-            'birthdate'         => 'required|date',
-            'birthplace'        => 'required|string',
+            'sex'               => 'required|string', // In-rename mula 'gender'
+            'birth_date'        => 'required|date',   // In-rename mula 'birthdate'
+            'birth_place'       => 'required|string', // In-rename mula 'birthplace'
             'contact_number'    => 'nullable|string',
+            'address'           => 'required|string',
+            'age'               => 'required|integer',
         ]);
 
         return DB::transaction(function () use ($request, $validated) {
             $validated['user_id'] = $request->user()->id;
-            $validated['date_submitted'] = now();
+            $validated['registration_date'] = now(); // In-rename mula 'date_submitted'
             
             // STEP 1: Default status is 'new' upon entry to masterlist
             $validated['id_status'] = $validated['id_status'] ?? 'new';
 
             $record = Masterlist::create($validated);
 
-            // STEP 2: TRIGGER POINT - Kung sakaling isinave ito agad bilang 'pending'
+            // STEP 2: TRIGGER POINT - Kapag 'pending' ang status, gawa ng entry sa IdIssuance
             if ($record->id_status === 'pending') {
                 $this->triggerIdIssuance($record);
             }
@@ -80,10 +84,11 @@ class MasterlistController extends Controller
 
     /**
      * PUT /api/masterlist/{id}
-     * TRIGGER: Kapag ang status ay binago patungong 'pending'.
+     * Hahanapin ang record gamit ang updated primary key 'citizen_id'
      */
     public function update(Request $request, $id)
     {
+        // Gagamit na tayo ng citizen_id sa pag-find base sa bagong columns
         $record = Masterlist::where('citizen_id', $id)->first();
 
         if (!$record) {
@@ -109,35 +114,48 @@ class MasterlistController extends Controller
 
     /**
      * Helper function para sa ID Issuance Entry
-     * Nilulutas nito ang Error 1364 at Error 1054
+     * Mapping mula Masterlist updated columns patungong IdIssuance
      */
-   private function triggerIdIssuance($record)
+    private function triggerIdIssuance($record)
 {
     IdIssuance::updateOrCreate(
         ['scid_number' => $record->scid_number],
         [
-            'status'                => 'pending',
-            'date_applied'          => now(),
-            // Idagdag ang mga fields na ito para mawala ang Error 1364
-            'last_name'             => $record->last_name, 
-            'first_name'            => $record->first_name,
-            'middle_name'            => $record->middle_name,
-            'birthdate'            => $record->birthdate,
-            'place_of_birth'            => $record->birthplace,
-            'house_no'                  => $record->house_no,
-            'street'                  => $record->street,
-            'barangay'                => $record->barangay,
-            'city_municipality'       => $record->city_municipality,
-            'province'       => $record->province,
-            'district'       => $record->district,
-            'citizenship'    => $record->citizenship,
-            'civil_status'   => $record->civil_status,
-            'willing_member' => $record->willing_member,
-            'emergency_contact_person' => $record->contact_person,
-            'emergency_contact_number' => $record->contact_number ?? 'N/A', 
-            // Fix para sa timestamp columns (Error 1054)
-            'date_created'          => now(),
-            'last_updated'          => now(),
+            'user_id'                  => $record->user_id,
+            'citizen_id'               => $record->citizen_id,
+            'id_status'                => 'pending',
+            'application_date'         => now(),
+            
+            // Mapping ng Personal Data (Iwas Error 1364)
+            'first_name'               => $record->first_name,
+            'middle_name'              => $record->middle_name ?? '',
+            'last_name'                => $record->last_name,
+            'suffix'                   => $record->suffix ?? '',
+            'gender'                   => $record->sex,        // Masterlist 'sex' -> Issuance 'gender'
+            'birthdate'                => $record->birth_date, // Masterlist 'birth_date' -> Issuance 'birthdate'
+            'place_of_birth'           => $record->birth_place, // Masterlist 'birth_place' -> Issuance 'place_of_birth'
+            'age'                      => $record->age,
+            'contact_number'           => $record->contact_number,
+            
+            // Mapping ng Address (Dito nag-error kanina)
+            'house_no'                 => $record->house_no ?? 'N/A', // Siguraduhing may value
+            'street'                   => $record->street ?? 'N/A',
+            'barangay'                 => $record->barangay,
+            'city_municipality'        => $record->city_municipality,
+            'province'                 => $record->province,
+            'district'                 => $record->district,
+            
+            // Iba pang mandatory fields
+            'citizenship'              => $record->citizenship,
+            'civil_status'             => $record->civil_status,
+            'emergency_contact_person' => $record->emergency_contact_person ?? 'N/A',
+            'emergency_contact_number' => $record->emergency_contact_number ?? 'N/A',
+            // CONVERSION LOGIC: Baguhin ang 'Yes/No' patungong 1/0
+            'willing_member' => ($record->willing_member === 'Yes' || $record->willing_member == 1) ? 1 : 0,
+            
+            // Default Tracking Columns
+            'date_created'             => now(),
+            'last_updated'             => now(),
         ]
     );
 }

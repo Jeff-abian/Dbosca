@@ -1,131 +1,150 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\IdIssuance;
+use App\Models\Masterlist;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class IdIssuanceController extends Controller
 {
     /**
-     * Ipakita lang ang ID issuances ng naka-login na user.
+     * GET /api/id-issuances
+     * Ipakita ang records base sa role ng user.
      */
     public function index(Request $request)
-{
-    // 1. Kunin ang user object mula sa token
-    $user = $request->user()->load('roleRelation'); 
-    
-    // 2. Tukuyin ang role name (convert to lowercase para safe ang comparison)
-    $roleName = strtolower($user->roleRelation->name ?? '');
+    {
+        $user = $request->user()->load('roleRelation'); 
+        $roleName = strtolower($user->roleRelation->name ?? '');
 
-    // 3. Conditional Query logic
-    if (in_array($roleName, ['admin', 'super admin'])) {
-        // Kapag Admin/Super Admin, ipakita ang lahat ng records
-        $data = IdIssuance::all(); 
-    } else {
-        // Kapag Citizen, i-filter ang data gamit ang user_id na nakuha sa token
-        // Siguraduhin na 'user_id' ang tawag sa column sa table mo
-        $data = IdIssuance::where('user_id', $user->id)->get();
+        if (in_array($roleName, ['admin', 'super admin'])) {
+            $data = IdIssuance::all(); 
+        } else {
+            // I-filter gamit ang user_id (Integer)
+            $data = IdIssuance::where('user_id', $user->id)->get();
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'role_accessed' => $roleName,
+            'data' => $data
+        ]);
     }
 
-    // 4. I-return ang result
-    return response()->json([
-        'id_status' => 'success',
-        'role_accessed' => $roleName,
-        'data' => $data
-    ]);
-}
+    /**
+     * PUT /api/id-issuances/{id}
+     * SYNC: Kapag nag-update dito, dapat mag-update din sa Masterlist.
+     */
+    public function update(Request $request, $id)
+    {
+        $issuance = IdIssuance::findOrFail($id);
+
+        return DB::transaction(function () use ($request, $issuance) {
+            // 1. I-update ang IdIssuance (Gumagamit na ng 'id_status' base sa bagong columns)
+            $issuance->update($request->all());
+
+            // 2. TWO-WAY SYNC: I-update ang Masterlist record gamit ang scid_number
+            Masterlist::where('scid_number', $issuance->scid_number)
+                ->update([
+                // Sinisiguro na ang bagong status ay lilipat sa Masterlist
+                'id_status'    => $issuance->id_status, 
+                'last_updated' => now(),
+                ]);
+
+           return response()->json([
+            'status' => 'success',
+            'message' => 'Both tables are now synchronized.',
+            'synced_status' => $issuance->id_status
+            ]);
+        });
+    }
 
     /**
-     * Mag-save ng bagong ID issuance record.
+     * POST /api/id-issuances
+     * Mag-save ng bagong ID issuance record (Citizen side).
      */
     public function store(Request $request)
-{
-    // 1. Kunin ang authenticated user
-    $user = $request->user();
+    {
+        $user = $request->user();
 
-    // 2. Hanapin ang kaukulang record sa Masterlist para makuha ang citizen_id
-    // Ginagamit natin ang user_id bilang link
-    $masterlist = \App\Models\Masterlist::where('user_id', $user->id)->first();
+        // Kunin ang citizen_id mula sa Masterlist gamit ang user_id
+        $masterlist = Masterlist::where('user_id', $user->id)->first();
 
-    if (!$masterlist) {
+        if (!$masterlist) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User record not found in Masterlist.'
+            ], 404);
+        }
+
+        // 1. Validation base sa bagong columns
+        $validated = $request->validate([
+            'scid_number'              => 'required|string',
+            'gender'                   => 'required|string|max:255',
+            'contact_number'           => 'required|string',
+            'last_name'                => 'required|string|max:255',
+            'first_name'               => 'required|string|max:255',
+            'middle_name'              => 'nullable|string|max:255',
+            'suffix'                   => 'nullable|string|max:255',
+            'birthdate'                => 'required|date', 
+            'place_of_birth'           => 'required|string',
+            'age'                      => 'required|integer',
+            'house_no'                 => 'required|string',
+            'street'                   => 'required|string',
+            'barangay'                 => 'required|string',
+            'city_municipality'        => 'required|string',
+            'province'                 => 'required|string',
+            'district'                 => 'required|string',
+            'citizenship'              => 'required|string',
+            'civil_status'             => 'required|string',
+            'emergency_contact_person' => 'required|string',
+            'emergency_contact_number' => 'required|string',
+            'willing_member'           => 'required|string',
+            'id_request_type'          => 'required|string',
+            'id_modality'              => 'required|string',
+            'photo_url'                => 'required|string',
+            'req1_url'                 => 'required|string',
+            'req2_url'                 => 'required|string',
+        ]);
+
+        // 2. Automatic Assignments
+        $validated['user_id']      = $user->id; 
+        $validated['citizen_id']   = $masterlist->citizen_id; 
+        $validated['id_status']    = 'Pending'; // Default status
+        $validated['application_date'] = now(); // In-rename mula 'submitted_date'
+
+        $issuance = IdIssuance::create($validated);
+
         return response()->json([
-            'id_status' => 'error',
-            'message' => 'User record not found in Masterlist.'
-        ], 404);
+            'status'  => 'success',
+            'message' => 'ID Issuance record created successfully.',
+            'data'    => $issuance
+        ], 201);
     }
 
-    // 3. Validation: Inalis ang issuance_id, citizen_id, at user_id
-    $validated = $request->validate([
-        'scid_number' => 'required|string', // Ginawang string kung may leading zeros
-        'gender' => 'required|string|max:255',
-        'contact_number' => 'required|string', // String para sa contact numbers
-        'last_name' => 'required|string|max:255',
-        'first_name' => 'required|string|max:255',
-        'middle_name' => 'nullable|string|max:255',
-        'suffix' => 'nullable|string|max:255',
-        'birthdate' => 'required', 
-        'place_of_birth' => 'required|string',
-        'age' => 'required|integer',
-        'house_no' => 'required|string',
-        'street' => 'required|string',
-        'barangay' => 'required|string',
-        'city_municipality' => 'required|string',
-        'province' => 'required|string',
-        'district' => 'required|string',
-        'citizenship' => 'required|string',
-        'civil_status' => 'required|string',
-        'emergency_contact_person' => 'required|string',
-        'emergency_contact_number' => 'required|string',
-        'willing_member' => 'required|string',
-        'email' => 'required|email',
-        'photo_url' => 'required|string',
-        'req1_url' => 'required|string',
-        'req2_url' => 'required|string',
-    ]);
-
-    // 4. Conversion ng Birthdate
-    try {
-        $validated['birthdate'] = \Carbon\Carbon::parse($request->birthdate)->format('Y-m-d');
-    } catch (\Exception $e) {
-        return response()->json(['message' => 'Invalid birthdate format.'], 422);
-    }
-
-    // 5. Automatic Assignment ng IDs at Dates
-    // Ang issuance_id ay hindi na isasama rito dahil AUTO-INCREMENT ito sa database
-    $validated['user_id'] = $user->id; 
-    $validated['citizen_id'] = $masterlist->citizen_id; // Foreign Key mula sa Masterlist
-    $validated['id_status'] = 'Pending'; // Default status para sa bagong request
-    $validated['submitted_date'] = now();
-
-    $issuance = \App\Models\IdIssuance::create($validated);
-
-    return response()->json([
-        'status' => 'success',
-        'message' => 'ID Issuance record created successfully.',
-        'data' => $issuance
-    ], 201);
-}
     /**
-     * Ipakita ang specific record (may ownership check).
+     * GET /api/id-issuances/{id}
      */
     public function show($id)
     {
-        $record = IdIssuance::where('issuance_id', $id)
+        // Ginamit na ang 'id' (Primary Key) sa halip na 'issuance_id'
+        $record = IdIssuance::where('id', $id)
                             ->where('user_id', auth()->id())
                             ->firstOrFail();
 
-        return response()->json(['id_status' => 'success', 'data' => $record]);
+        return response()->json(['status' => 'success', 'data' => $record]);
     }
 
     /**
-     * Burahin ang record (may ownership check).
+     * DELETE /api/id-issuances/{id}
      */
     public function destroy($id)
     {
-        $record = IdIssuance::where('issuance_id', $id)
+        $record = IdIssuance::where('id', $id)
                             ->where('user_id', auth()->id())
                             ->first();
 
@@ -135,6 +154,6 @@ class IdIssuanceController extends Controller
 
         $record->delete();
 
-        return response()->json(null, Response::HTTP_NO_CONTENT);
+        return response()->json(['message' => 'Deleted successfully.'], 200);
     }
 }
