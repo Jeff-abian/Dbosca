@@ -20,6 +20,10 @@ class MasterlistController extends Controller
 
     public function index(Request $request)
     {
+        // Isasama na agad ang application record sa isang query lang
+    $data = Masterlist::with('application')->paginate(15); 
+
+    return MasterlistResource::collection($data);
         $user = $request->user();
         $roleName = strtolower($user->roleRelation->name ?? '');
 
