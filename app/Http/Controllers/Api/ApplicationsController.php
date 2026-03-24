@@ -9,16 +9,49 @@ use App\Models\Masterlist;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Exception;
 
 class ApplicationsController extends Controller
 {
-    // ... (index method remains the same)
+    /**
+     * GET /api/applications
+     * Filtered: Admin sees all, Citizen sees only their own.
+     */
+    public function index(Request $request)
+    {
+        $user = $request->user()->load('roleRelation');
+        $roleName = strtolower(optional($user->roleRelation)->name);
+        
+        $query = Application::query();
 
+        // LOGIC: Filter by Role
+        if (in_array($roleName, ['admin', 'super admin'])) {
+            $status = $request->query('status', 'All');
+            if ($status !== 'All') {
+                $query->where('reg_status', $status);
+            }
+        } else {
+            // Kung Citizen, sariling record lang ang kukunin
+            $query->where('user_id', $user->id);
+        }
+
+        $applications = $query->orderBy('date_created', 'desc')->paginate(15);
+
+        return response()->json([
+            'status' => true,
+            'role' => $roleName,
+            'data' => $applications
+        ]);
+    }
+
+    /**
+     * POST /api/applications
+     * Pag-save ng application na may Multiple File Hashing.
+     */
     public function store(Request $request)
     {
-        // 1. Validation
         $validated = $request->validate([
             'last_name'         => 'required|string|max:255',
             'first_name'        => 'required|string|max:255',
@@ -46,14 +79,11 @@ class ApplicationsController extends Controller
             'documents.*'       => 'file|mimes:pdf,jpg,jpeg,png,docx|max:10240',
         ]);
 
-        // 2. Revised File Handling: Array of Objects (Filename + Hashed Path)
+        // File Metadata (Array of Objects: Filename + Hashed Path)
         $fileMetaData = [];
         if ($request->hasFile('documents')) {
             foreach ($request->file('documents') as $file) {
-                // I-store ang file (automatic hashed name para iwas duplication)
                 $path = $file->store('attachments', 'public');
-                
-                // I-save ang original name kasama ang hashed path
                 $fileMetaData[] = [
                     'filename' => $file->getClientOriginalName(),
                     'path'     => $path
@@ -61,12 +91,12 @@ class ApplicationsController extends Controller
             }
         }
 
-        // 3. Prepare data for insertion
+        // Attach user_id para sa filtering mamaya
+        $validated['user_id'] = Auth::id(); 
         $validated['reg_attachments'] = json_encode($fileMetaData);
         $validated['reg_status'] = 'Pending';
         $validated['date_created'] = now();
 
-        // 4. Single creation call
         $application = Application::create($validated);
 
         return response()->json([
@@ -76,11 +106,36 @@ class ApplicationsController extends Controller
         ], 201);
     }
 
+    /**
+     * GET /api/applications/{id}
+     * Security: Di pwedeng silipin ng ibang user ang data ng iba.
+     */
+    public function show(Request $request, Application $application)
+    {
+        $user = $request->user()->load('roleRelation');
+        $roleName = strtolower(optional($user->roleRelation)->name);
+
+        // Security Check: Admin or Owner only
+        if (!in_array($roleName, ['admin', 'super admin']) && $application->user_id !== $user->id) {
+            return response()->json(['status' => false, 'message' => 'Unauthorized access.'], 403);
+        }
+
+        return response()->json([
+            'status' => true,
+            'data' => $application
+        ]);
+    }
+
+    /**
+     * PUT /api/applications/{id}
+     * Approval and Masterlist Syncing.
+     */
     public function update(Request $request, Application $application)
     {
-        // Role check (keep as is)
         $user = $request->user()->load('roleRelation');
-        if (!in_array(strtolower(optional($user->roleRelation)->name), ['admin', 'super admin'])) {
+        $roleName = strtolower(optional($user->roleRelation)->name);
+        
+        if (!in_array($roleName, ['admin', 'super admin'])) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
         }
 
@@ -101,7 +156,7 @@ class ApplicationsController extends Controller
 
                 if (strtolower($validated['reg_status']) === 'approved') {
                     
-                    // User Creation logic (Keep as is)
+                    // User check or account creation
                     $existingUser = User::where('email', $application->email)->first();
                     $targetUserId = $existingUser ? $existingUser->id : null;
 
@@ -114,18 +169,18 @@ class ApplicationsController extends Controller
                             'email'    => $application->email,
                             'username' => $username,
                             'password' => Hash::make($tempPassword),
-                            'role'     => 3, 
+                            'role'     => 3, // Citizen Role
                         ]);
                         $targetUserId = $newUser->id;
                     }
 
-                    // SCID Generation (Keep as is)
+                    // Generate Unique SCID Number
                     $scidNumber = now()->year . '-' . rand(10000, 99999);
                     while (Masterlist::where('scid_number', $scidNumber)->exists()) {
                         $scidNumber = now()->year . '-' . rand(10000, 99999);
                     }
 
-                    // 5. MASTERLIST SYNC
+                    // MASTERLIST INSERT (Copying Data)
                     Masterlist::create([
                         'application_id'    => $application->id,
                         'user_id'           => $targetUserId,
@@ -152,17 +207,30 @@ class ApplicationsController extends Controller
                         'pension_amount'    => $application->pension_amount,
                         'has_illness'       => $application->has_illness,
                         'id_status'         => 'new',
-                        'document_path'     => $application->reg_attachments, // Kopya ng JSON Metadata
+                        'document_path'     => $application->reg_attachments, 
                         'registration_date' => now(),
                     ]);
                 }
             });
 
-            return response()->json(['status' => 'success', 'message' => 'Synced to Masterlist.']);
+            return response()->json(['status' => 'success', 'message' => 'Synced to Masterlist successfully.']);
 
         } catch (Exception $e) {
-            return response()->json(['error' => 'Failed: ' . $e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to update: ' . $e->getMessage()], 500);
         }
     }
-    // ... (destroy method remains the same)
+
+    /**
+     * DELETE /api/applications/{id}
+     */
+    public function destroy(Request $request, Application $application)
+    {
+        $user = $request->user()->load('roleRelation');
+        if (!in_array(strtolower(optional($user->roleRelation)->name), ['admin', 'super admin'])) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized.'], 403);
+        }
+
+        $application->delete();
+        return response()->json(['status' => 'success', 'message' => 'Application deleted.']);
+    }
 }
