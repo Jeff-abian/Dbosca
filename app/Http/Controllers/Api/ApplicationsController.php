@@ -68,8 +68,8 @@ class ApplicationsController extends Controller
             'city_municipality' => 'required|string',
             'district'          => 'required|string',
             'province'          => 'required|string',
-            'email'             => 'required|email|max:255',
-            'contact_number'    => 'required|string|max:20',
+            'email'             => 'required|email|max:255|unique:applications,email',
+            'contact_number'    => 'required|string|max:20|unique:applications,contact_number',
             'living_arrangement'=> 'required|string',
             'is_pensioner'      => 'nullable|boolean',
             'pension_amount'    => 'nullable|numeric',
@@ -77,7 +77,11 @@ class ApplicationsController extends Controller
             'registration_type' => 'required|string',
             'documents'         => 'required|array|min:1',
             'documents.*'       => 'file|mimes:pdf,jpg,jpeg,png,docx|max:10240',
-        ]);
+        ], [
+        // Custom Error Message para alam ni user kung bakit na-reject
+        'email.unique' => 'Duplicate email',
+        'contact_number' => 'Duplicate contact_number'
+    ]);
 
         // File Metadata (Array of Objects: Filename + Hashed Path)
         $fileMetaData = [];
@@ -146,33 +150,38 @@ class ApplicationsController extends Controller
 
         try {
             DB::transaction(function () use ($request, $application, $validated) {
-                
-                $application->update([
-                    'reg_status'        => $validated['reg_status'],
-                    'reviewed_by'       => $request->user()->id,
-                    'date_reviewed'     => now(),
-                    'rejection_remarks' => $validated['rejection_remarks'] ?? null,
-                ]);
+    // 1. Update Application status
+    $application->update([
+        'reg_status' => $validated['reg_status'],
+        'reviewed_by' => $request->user()->id,
+        'date_reviewed' => now(),
+    ]);
 
-                if (strtolower($validated['reg_status']) === 'approved') {
-                    
-                    // User check or account creation
-                    $existingUser = User::where('email', $application->email)->first();
-                    $targetUserId = $existingUser ? $existingUser->id : null;
+    if (strtolower($validated['reg_status']) === 'approved') {
+        
+        $existingUser = User::where('email', $application->email)->first();
+        
+        // DITO NATIN KUKUNIN O GAGAWA NG USERNAME
+        if (!$existingUser) {
+            // GENERATE NEW USERNAME
+            $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
+            while (User::where('username', $username)->exists()) {
+                $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
+            }
 
-                    if (!$existingUser) {
-                        $tempPassword = 'User' . now()->year . '!'; 
-                        $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
-
-                        $newUser = User::create([
-                            'name'     => $application->first_name . ' ' . $application->last_name,
-                            'email'    => $application->email,
-                            'username' => $username,
-                            'password' => Hash::make($tempPassword),
-                            'role'     => 3, // Citizen Role
-                        ]);
-                        $targetUserId = $newUser->id;
-                    }
+            $newUser = User::create([
+                'name'     => $application->first_name . ' ' . $application->last_name,
+                'email'    => $application->email,
+                'username' => $username, // Na-save na sa users table
+                'password' => Hash::make('User' . now()->year . '!'),
+                'role'     => 3,
+            ]);
+            $targetUserId = $newUser->id;
+            $finalUsername = $newUser->username; // Ito ang ipapasa natin sa masterlist
+        } else {
+            $targetUserId = $existingUser->id;
+            $finalUsername = $existingUser->username; // Gamitin ang luma kung existing na
+        }
 
                     // Generate Unique SCID Number
                     $scidNumber = now()->year . '-' . rand(10000, 99999);
@@ -184,6 +193,7 @@ class ApplicationsController extends Controller
                     Masterlist::create([
                         'application_id'    => $application->id,
                         'user_id'           => $targetUserId,
+                        'username'          => $finalUsername, // <--- ETO YUNG NAIDAGDAG
                         'scid_number'       => $scidNumber,
                         'first_name'        => $application->first_name,
                         'middle_name'       => $application->middle_name,

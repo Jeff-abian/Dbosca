@@ -26,7 +26,7 @@ class Masterlist extends Model
      */
     // app/Models/Masterlist.php
 protected $fillable = [
-    'application_id', 'user_id', 'scid_number', 'first_name', 'middle_name', 
+    'application_id', 'user_id','username','scid_number', 'first_name', 'middle_name', 
     'last_name', 'suffix', 'birth_date', 'age', 'sex', 'civil_status', 
     'citizenship', 'birth_place', 'address', 'barangay', 'city_municipality', 
     'district', 'province', 'email', 'contact_number', 'living_arrangement', 
