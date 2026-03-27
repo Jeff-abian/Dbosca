@@ -60,7 +60,7 @@ class Application extends Model
         'illness_details',
         'hospitalized_last_6_months',
         'contact_number',
-        'reg_attachments',
+        'document',
         'registration_type',
         'reg_status',       // In-rename mula status
         'rejection_remarks',
@@ -68,7 +68,6 @@ class Application extends Model
         'registration_date',
         'date_reviewed',
         'reviewed_by',
-        'document_path',
         'applicationscol'
     ];
 

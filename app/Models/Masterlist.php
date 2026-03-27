@@ -31,7 +31,7 @@ protected $fillable = [
     'citizenship', 'birth_place', 'address', 'barangay', 'city_municipality', 
     'district', 'province', 'email', 'contact_number', 'living_arrangement', 
     'is_pensioner', 'pension_amount', 'has_illness', 'id_status', 
-    'registration_date', 'document_path'
+    'registration_date','document'
 ];
 
 public function application()

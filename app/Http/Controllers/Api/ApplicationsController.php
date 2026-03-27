@@ -75,8 +75,8 @@ class ApplicationsController extends Controller
             'pension_amount'    => 'nullable|numeric',
             'has_illness'       => 'required|boolean',
             'registration_type' => 'required|string',
-            'documents'         => 'required|array|min:1',
-            'documents.*'       => 'file|mimes:pdf,jpg,jpeg,png,docx|max:10240',
+            'document'         => 'required|array|min:1',
+            'document.*'       => 'file|mimes:pdf,jpg,jpeg,png,docx|max:10240',
         ], [
         // Custom Error Message para alam ni user kung bakit na-reject
         'email.unique' => 'Duplicate email',
@@ -85,8 +85,8 @@ class ApplicationsController extends Controller
 
         // File Metadata (Array of Objects: Filename + Hashed Path)
         $fileMetaData = [];
-        if ($request->hasFile('documents')) {
-            foreach ($request->file('documents') as $file) {
+        if ($request->hasFile('document')) {
+            foreach ($request->file('document') as $file) {
                 $path = $file->store('attachments', 'public');
                 $fileMetaData[] = [
                     'filename' => $file->getClientOriginalName(),
@@ -95,9 +95,9 @@ class ApplicationsController extends Controller
             }
         }
 
-        // Attach user_id para sa filtering mamaya
+        // Attach user_id para sa filtering
         $validated['user_id'] = Auth::id(); 
-        $validated['reg_attachments'] = json_encode($fileMetaData);
+        $validated['document'] = json_encode($fileMetaData);
         $validated['reg_status'] = 'Pending';
         $validated['date_created'] = now();
 
@@ -217,7 +217,7 @@ class ApplicationsController extends Controller
                         'pension_amount'    => $application->pension_amount,
                         'has_illness'       => $application->has_illness,
                         'id_status'         => 'new',
-                        'document_path'     => $application->reg_attachments, 
+                        'document'     => $application->document, 
                         'registration_date' => now(),
                     ]);
                 }
