@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\IdIssuanceController;
 use App\Http\Controllers\Api\IdRenewalsController;
 use App\Http\Controllers\Api\IdReplacementController;
 use App\Http\Controllers\Api\RegistryProxyController;
+use App\Http\Controllers\Api\FileController;
 
 
 
@@ -51,6 +52,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/applications/{application}', [ApplicationsController::class, 'show']);
     Route::put('/applications/{application}', [ApplicationsController::class, 'update']);
     Route::delete('/applications/{application}', [ApplicationsController::class, 'destroy']);
+    Route::get('/files/view', [FileController::class, 'viewFile']);
 
     // Basic test route (default) and Logout
     Route::get('/user', function (Request $request) {
