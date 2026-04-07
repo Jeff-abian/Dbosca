@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\User;
+use App\Models\Masterlist; // Import natin ang Masterlist para sa Reset Password logic
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str; // Para sa helper functions
 
 class AuthorizationController extends Controller
 {
@@ -20,8 +22,6 @@ class AuthorizationController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
             'role' => 'required|string|max:255',
-            
-            
         ]);
 
         $user = User::create([
@@ -30,8 +30,6 @@ class AuthorizationController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'role' => $request->role,
-            
-            
         ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -81,5 +79,74 @@ class AuthorizationController extends Controller
         return response()->json([
             'message' => 'Logged out successfully'
         ], 200);
+    }
+
+    /**
+     * LOGIC ADDITION: CHANGE PASSWORD (Para kay User/Senior Citizen)
+     * Ito ang magpapalit ng has_changed into 1.
+     */
+    public function changePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required',
+            'new_password'     => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        // Check kung tama ang lumang password (temp password)
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ang kasalukuyang password ay mali.'
+            ], 422);
+        }
+
+        // Update password at gawing 1 ang has_changed
+        $user->update([
+            'password'    => Hash::make($request->new_password),
+            'has_changed' => 1, 
+        ]);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Password updated successfully. Your temporary password is now hidden from the masterlist.'
+        ]);
+    }
+
+    /**
+     * LOGIC ADDITION: ADMIN RESET PASSWORD
+     * Ire-reset ang password sa sc + 4 random numbers format.
+     */
+    public function adminResetPassword(Request $request, $id)
+    {
+        // Hanapin ang user
+        $user = User::findOrFail($id);
+        
+        // Generate bagong temporary password: sc + 4 numbers
+        $newTempPassword = 'sc' . rand(1000, 9999);
+
+        // Update User Table
+        $user->update([
+            'password'    => Hash::make($newTempPassword),
+            'has_changed' => 0, // Balik sa 0 para makita ulit sa Masterlist
+        ]);
+
+        // Update Masterlist Table (Para naka-sync ang plain text temp_password)
+        $masterlist = Masterlist::where('user_id', $user->id)->first();
+        if ($masterlist) {
+            $masterlist->update([
+                'temp_password' => $newTempPassword
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'User password has been reset.',
+            'credentials' => [
+                'username' => $user->username,
+                'new_temporary_password' => $newTempPassword
+            ]
+        ]);
     }
 }

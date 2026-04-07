@@ -66,11 +66,14 @@ class MasterlistController extends Controller
             'contact_number'    => 'nullable|string',
             'address'           => 'required|string',
             'age'               => 'required|integer',
+            'registration_type' => 'required|string', // Halimbawa: New, Renewal, Replacement
+            'date_reviewed'     => 'nullable|date',
         ]);
 
         return DB::transaction(function () use ($request, $validated) {
             $validated['user_id'] = $request->user()->id;
             $validated['registration_date'] = now(); // In-rename mula 'date_submitted'
+            $validated['date_reviewed'] = now(); // Idagdag ito sa loob ng transaction bago ang Create
             
             // STEP 1: Default status is 'new' upon entry to masterlist
             $validated['id_status'] = $validated['id_status'] ?? 'new';

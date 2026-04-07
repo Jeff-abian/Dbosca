@@ -106,7 +106,7 @@ class ApplicationsController extends Controller
 
     /**
      * PUT /api/applications/{id}
-     * Pinahusay: Pwede nang mag-edit ng lahat ng details.
+     * Pinahusay: Kasama ang Password Generation at has_changed flag.
      */
     public function update(Request $request, Application $application)
     {
@@ -114,32 +114,24 @@ class ApplicationsController extends Controller
         $roleName = strtolower(optional($user->roleRelation)->name);
         $isAdmin = in_array($roleName, ['admin', 'super admin']);
         
-        // Security: Kapag approved na, Admin lang ang pwedeng gumalaw.
         if (!$isAdmin && $application->reg_status === 'approved') {
             return response()->json(['status' => 'error', 'message' => 'Approved applications cannot be edited.'], 403);
         }
 
-        // VALIDATION: Ginamit ang 'sometimes' para optional ang fields kung status lang ang babaguhin.
         $validated = $request->validate([
-            'reg_status'        => 'sometimes|required|in:approved,disapproved,Pending',
+            'reg_status'        => 'sometimes|required|in:approved,disapproved,pending',
             'rejection_remarks' => 'required_if:reg_status,disapproved|string|nullable',
-            
-            // Personal & Contact Info (Ignored unique check for current record)
             'first_name'        => 'sometimes|required|string|max:255',
             'last_name'         => 'sometimes|required|string|max:255',
             'middle_name'       => 'nullable|string|max:255',
             'suffix'            => 'nullable|string|max:10',
             'email'             => 'sometimes|required|email|unique:applications,email,' . $application->id,
             'contact_number'    => 'sometimes|required|string|unique:applications,contact_number,' . $application->id,
-            
-            // Address Info
             'address'           => 'sometimes|required|string',
             'barangay'          => 'sometimes|required|string',
             'city_municipality' => 'sometimes|required|string',
             'province'          => 'sometimes|required|string',
             'district'          => 'sometimes|required|string',
-            
-            // Other details
             'birth_date'        => 'sometimes|required|date',
             'age'               => 'sometimes|required|integer',
             'sex'               => 'sometimes|required|string',
@@ -151,38 +143,41 @@ class ApplicationsController extends Controller
             'has_illness'       => 'sometimes|required|boolean',
         ]);
 
+        $tempPassword = null;
+        $finalUsername = null;
+
         try {
-            DB::transaction(function () use ($request, $application, $validated, $isAdmin) {
+            DB::transaction(function () use ($request, $application, $validated, $isAdmin, &$tempPassword, &$finalUsername) {
                 
-                // Dagdag info kung Admin ang nag-review
                 if ($isAdmin && isset($validated['reg_status'])) {
                     $validated['reviewed_by'] = $request->user()->id;
                     $validated['date_reviewed'] = now();
                 }
 
-                // 1. UPDATE ALL VALIDATED FIELDS
                 $application->update($validated);
 
-                // 2. SYNC TO MASTERLIST ONLY IF JUST APPROVED
                 if (isset($validated['reg_status']) && strtolower($validated['reg_status']) === 'approved') {
                     
                     $existingUser = User::where('email', $application->email)->first();
                     
                     if (!$existingUser) {
-                        $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
-                        while (User::where('username', $username)->exists()) {
-                            $username = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
+                        // Logic: sc + 4 numbers
+                        $tempPassword = 'sc' . rand(1000, 9999);
+                        
+                        $finalUsername = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
+                        while (User::where('username', $username ?? $finalUsername)->exists()) {
+                            $finalUsername = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
                         }
 
                         $newUser = User::create([
-                            'name'     => $application->first_name . ' ' . $application->last_name,
-                            'email'    => $application->email,
-                            'username' => $username,
-                            'password' => Hash::make('User' . now()->year . '!'),
-                            'role'     => 3,
+                            'name'        => $application->first_name . ' ' . $application->last_name,
+                            'email'       => $application->email,
+                            'username'    => $finalUsername,
+                            'password'    => Hash::make($tempPassword),
+                            'has_changed' => 0, // 0 as requested for temporary state
+                            'role'        => 3,
                         ]);
                         $targetUserId = $newUser->id;
-                        $finalUsername = $newUser->username;
                     } else {
                         $targetUserId = $existingUser->id;
                         $finalUsername = $existingUser->username;
@@ -193,13 +188,13 @@ class ApplicationsController extends Controller
                         $scidNumber = now()->year . '-' . rand(10000, 99999);
                     }
 
-                    // Gumamit ng $application->fresh() para makuha ang pinaka-updated na data
                     $updatedApp = $application->fresh();
 
                     Masterlist::create([
                         'application_id'    => $updatedApp->id,
                         'user_id'           => $targetUserId,
                         'username'          => $finalUsername,
+                        'temp_password'     => $tempPassword, // Plain password as requested for database
                         'scid_number'       => $scidNumber,
                         'first_name'        => $updatedApp->first_name,
                         'middle_name'       => $updatedApp->middle_name,
@@ -229,12 +224,24 @@ class ApplicationsController extends Controller
                 }
             });
 
-            // Dynamic message
-            $msg = (isset($validated['reg_status']) && $validated['reg_status'] === 'approved') 
-                ? 'Application approved and synced to Masterlist.' 
-                : 'Application details updated successfully.';
+            $isApproved = (isset($validated['reg_status']) && $validated['reg_status'] === 'approved');
+            
+            $response = [
+                'status'  => 'success',
+                'message' => $isApproved ? 'Application approved and account created.' : 'Application details updated successfully.',
+            ];
 
-            return response()->json(['status' => 'success', 'message' => $msg]);
+            // Response credentials object for frontend
+            if ($isApproved && $tempPassword) {
+                $response['credentials'] = [
+                    'username'           => $finalUsername,
+                    'temporary_password' => $tempPassword,
+                    'has_changed'        => 0,
+                    'note'               => 'Please provide these credentials to the citizen.'
+                ];
+            }
+
+            return response()->json($response);
 
         } catch (Exception $e) {
             return response()->json(['error' => 'Failed to update: ' . $e->getMessage()], 500);

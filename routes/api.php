@@ -59,6 +59,14 @@ Route::middleware('auth:sanctum')->group(function () {
         return $request->user();
     });
     Route::post('/auth/logout', [AuthorizationController::class, 'logout']);
+    // ===================================
+    // ADDED: PASSWORD MANAGEMENT ROUTES
+    // ===================================
+    // Para kay User/Senior Citizen (Change their own password)
+    Route::post('/auth/change-password', [AuthorizationController::class, 'changePassword']);
+    
+    // Para kay Admin (Reset another user's password using their User ID)
+    Route::post('/auth/admin/reset-password/{id}', [AuthorizationController::class, 'adminResetPassword']);
 
     // Institution API Routes (Resource Declaration)
 
