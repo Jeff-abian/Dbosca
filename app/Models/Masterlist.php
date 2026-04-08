@@ -34,7 +34,11 @@ protected $fillable = [
     'is_pensioner', 'pension_amount', 'has_illness', 'id_status', 
     'registration_date','document'
 ];
-
+    protected $casts = [
+        'is_pensioner' => 'boolean',
+        'has_illness' => 'boolean',
+        // ... iba pang TINYINT columns
+    ];
 public function application()
 {
     // Sinasabi nito na ang Masterlist ay "connected" sa isang Application

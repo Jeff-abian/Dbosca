@@ -31,6 +31,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'has_changed',
         
          // Include the custom column
     ];

@@ -50,6 +50,7 @@ class ApplicationsController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            // Basic Info
             'last_name'         => 'required|string|max:255',
             'first_name'        => 'required|string|max:255',
             'middle_name'       => 'nullable|string|max:255',
@@ -68,15 +69,32 @@ class ApplicationsController extends Controller
             'email'             => 'required|email|max:255|unique:applications,email',
             'contact_number'    => 'required|string|max:20|unique:applications,contact_number',
             'living_arrangement'=> 'required|string',
-            'is_pensioner'      => 'nullable|boolean',
-            'pension_amount'    => 'nullable|numeric',
-            'has_illness'       => 'required|boolean',
             'registration_type' => 'required|string',
-            'document'          => 'required|array|min:1',
-            'document.*'        => 'file|mimes:pdf,jpg,jpeg,png,docx|max:10240',
-        ], [
-            'email.unique' => 'Duplicate email',
-            'contact_number' => 'Duplicate contact_number'
+
+            // --- DETAILED FIELDS (ACCORDING TO PAYLOAD) ---
+            'is_pensioner'           => 'required|boolean',
+            'pension_source_gsis'    => 'nullable|boolean',
+            'pension_source_sss'     => 'nullable|boolean',
+            'pension_source_afpslai' => 'nullable|boolean',
+            'pension_source_others'  => 'nullable|string',
+            'pension_amount'         => 'nullable|numeric',
+            
+            'has_permanent_income'    => 'required|boolean',
+            'permanent_income_source' => 'nullable|string',
+            
+            'has_regular_support'    => 'required|boolean',
+            'support_type_cash'      => 'nullable|boolean',
+            'support_cash_amount'    => 'nullable|numeric',
+            'support_cash_frequency' => 'nullable|string',
+            'support_type_inkind'    => 'nullable|boolean',
+            'kind_support_details'   => 'nullable|string',
+            
+            'has_illness'                => 'required|boolean',
+            'illness_details'            => 'nullable|string',
+            'hospitalized_last_6_months' => 'required|boolean',
+
+            'document'   => 'required|array|min:1',
+            'document.*' => 'file|mimes:pdf,jpg,jpeg,png,docx|max:10240',
         ]);
 
         $fileMetaData = [];
@@ -276,4 +294,5 @@ class ApplicationsController extends Controller
         $application->delete();
         return response()->json(['status' => 'success', 'message' => 'Application deleted.']);
     }
+    
 }

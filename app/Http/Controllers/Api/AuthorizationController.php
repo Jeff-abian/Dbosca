@@ -86,33 +86,34 @@ class AuthorizationController extends Controller
      * Ito ang magpapalit ng has_changed into 1.
      */
     public function changePassword(Request $request)
-    {
-        $request->validate([
-            'current_password' => 'required',
-            'new_password'     => 'required|string|min:8|confirmed',
-        ]);
+{
+    // 1. Validation - Siguraduhin na may confirmation yung bagong password
+    $request->validate([
+        'current_password' => 'required',
+        'new_password'     => 'required|string|min:8|confirmed', // 'confirmed' means kailangan ng 'new_password_confirmation' field
+    ]);
 
-        $user = $request->user();
+    $user = Auth::user(); // Kunin ang kasalukuyang logged-in user
 
-        // Check kung tama ang lumang password (temp password)
-        if (!Hash::check($request->current_password, $user->password)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Ang kasalukuyang password ay mali.'
-            ], 422);
-        }
-
-        // Update password at gawing 1 ang has_changed
-        $user->update([
-            'password'    => Hash::make($request->new_password),
-            'has_changed' => 1, 
-        ]);
-
+    // 2. Check muna kung tama ang 'current_password' na in-input (yung 'scXXXX')
+    if (!Hash::check($request->current_password, $user->password)) {
         return response()->json([
-            'status'  => 'success',
-            'message' => 'Password updated successfully. Your temporary password is now hidden from the masterlist.'
-        ]);
+            'status' => 'error',
+            'message' => 'Ang kasalukuyang password ay mali.'
+        ], 422);
     }
+
+    // 3. EXECUTION: Update Password at i-set ang has_changed sa 1
+    $user->update([
+        'password'    => Hash::make($request->new_password),
+        'has_changed' => 1, // <--- Eto ang pinaka-importante!
+    ]);
+
+    return response()->json([
+        'status'  => 'success',
+        'message' => 'Password updated successfully! Hidden na rin ito sa Masterlist.'
+    ]);
+}
 
     /**
      * LOGIC ADDITION: ADMIN RESET PASSWORD

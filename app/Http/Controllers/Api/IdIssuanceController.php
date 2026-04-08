@@ -4,156 +4,90 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\IdIssuance;
-use App\Models\Masterlist;
+use App\Http\Resources\IdIssuanceResource;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class IdIssuanceController extends Controller
 {
     /**
-     * GET /api/id-issuances
-     * Ipakita ang records base sa role ng user.
+     * Display a listing of the resource without pagination.
      */
-    public function index(Request $request)
+    public function index(): AnonymousResourceCollection
     {
-        $user = $request->user()->load('roleRelation'); 
-        $roleName = strtolower($user->roleRelation->name ?? '');
-
-        if (in_array($roleName, ['admin', 'super admin'])) {
-            $data = IdIssuance::all(); 
-        } else {
-            // I-filter gamit ang user_id (Integer)
-            $data = IdIssuance::where('user_id', $user->id)->get();
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'role_accessed' => $roleName,
-            'data' => $data
-        ]);
+        // Fetching all records as requested
+        $issuances = IdIssuance::with('masterlist')->get();
+        
+        return IdIssuanceResource::collection($issuances);
     }
 
     /**
-     * PUT /api/id-issuances/{id}
-     * SYNC: Kapag nag-update dito, dapat mag-update din sa Masterlist.
+     * Store a newly created resource in storage.
      */
-    public function update(Request $request, $id)
+    public function store(Request $request): JsonResponse
     {
-        $issuance = IdIssuance::findOrFail($id);
-
-        return DB::transaction(function () use ($request, $issuance) {
-            // 1. I-update ang IdIssuance (Gumagamit na ng 'id_status' base sa bagong columns)
-            $issuance->update($request->all());
-
-            // 2. TWO-WAY SYNC: I-update ang Masterlist record gamit ang scid_number
-            Masterlist::where('scid_number', $issuance->scid_number)
-                ->update([
-                // Sinisiguro na ang bagong status ay lilipat sa Masterlist
-                'id_status'    => $issuance->id_status, 
-                'last_updated' => now(),
-                ]);
-
-           return response()->json([
-            'status' => 'success',
-            'message' => 'Both tables are now synchronized.',
-            'synced_status' => $issuance->id_status
-            ]);
-        });
-    }
-
-    /**
-     * POST /api/id-issuances
-     * Mag-save ng bagong ID issuance record (Citizen side).
-     */
-    public function store(Request $request)
-    {
-        $user = $request->user();
-
-        // Kunin ang citizen_id mula sa Masterlist gamit ang user_id
-        $masterlist = Masterlist::where('user_id', $user->id)->first();
-
-        if (!$masterlist) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'User record not found in Masterlist.'
-            ], 404);
-        }
-
-        // 1. Validation base sa bagong columns
-        $validated = $request->validate([
-            'scid_number'              => 'required|string',
-            'gender'                   => 'required|string|max:255',
-            'contact_number'           => 'required|string',
-            'last_name'                => 'required|string|max:255',
-            'first_name'               => 'required|string|max:255',
-            'middle_name'              => 'nullable|string|max:255',
-            'suffix'                   => 'nullable|string|max:255',
-            'birthdate'                => 'required|date', 
-            'place_of_birth'           => 'required|string',
-            'age'                      => 'required|integer',
-            'house_no'                 => 'required|string',
-            'street'                   => 'required|string',
-            'barangay'                 => 'required|string',
-            'city_municipality'        => 'required|string',
-            'province'                 => 'required|string',
-            'district'                 => 'required|string',
-            'citizenship'              => 'required|string',
-            'civil_status'             => 'required|string',
-            'emergency_contact_person' => 'required|string',
-            'emergency_contact_number' => 'required|string',
-            'willing_member'           => 'required|string',
-            'id_request_type'          => 'required|string',
-            'id_modality'              => 'required|string',
-            'photo_url'                => 'required|string',
-            'req1_url'                 => 'required|string',
-            'req2_url'                 => 'required|string',
+        $validator = Validator::make($request->all(), [
+            'scid_number'              => 'required|exists:masterlist,scid_number|unique:id_issuance,scid_number',
+            'citizen_id'               => 'required|exists:masterlist,citizen_id',
+            'id_request_type'          => 'required|in:New ID,Renewal,Lost/Damage',
+            'id_modality'              => 'required|in:Walk-in,Online',
+            'emergency_contact_person' => 'nullable|string|max:150',
+            'emergency_contact_number' => 'nullable|string|max:20',
+            'application_date'         => 'nullable|date',
+            'photo_url'                => 'nullable|url|max:500',
         ]);
 
-        // 2. Automatic Assignments
-        $validated['user_id']      = $user->id; 
-        $validated['citizen_id']   = $masterlist->citizen_id; 
-        $validated['id_status']    = 'Pending'; // Default status
-        $validated['application_date'] = now(); // In-rename mula 'submitted_date'
-
-        $issuance = IdIssuance::create($validated);
-
-        return response()->json([
-            'status'  => 'success',
-            'message' => 'ID Issuance record created successfully.',
-            'data'    => $issuance
-        ], 201);
-    }
-
-    /**
-     * GET /api/id-issuances/{id}
-     */
-    public function show($id)
-    {
-        // Ginamit na ang 'id' (Primary Key) sa halip na 'issuance_id'
-        $record = IdIssuance::where('id', $id)
-                            ->where('user_id', auth()->id())
-                            ->firstOrFail();
-
-        return response()->json(['status' => 'success', 'data' => $record]);
-    }
-
-    /**
-     * DELETE /api/id-issuances/{id}
-     */
-    public function destroy($id)
-    {
-        $record = IdIssuance::where('id', $id)
-                            ->where('user_id', auth()->id())
-                            ->first();
-
-        if (!$record) {
-            return response()->json(['message' => 'Record not found or unauthorized.'], 404);
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $record->delete();
+        $idIssuance = IdIssuance::create($request->all());
 
-        return response()->json(['message' => 'Deleted successfully.'], 200);
+        return (new IdIssuanceResource($idIssuance))
+            ->response()
+            ->setStatusCode(201);
+    }
+
+    /**
+     * Display the specified resource.
+     */
+    public function show(IdIssuance $idIssuance): IdIssuanceResource
+    {
+        return new IdIssuanceResource($idIssuance);
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update(Request $request, IdIssuance $idIssuance): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'id_application_status' => 'sometimes|in:For approval,Approved,Rejected',
+            'id_status'             => 'sometimes|in:pending,released',
+            'rejection_remarks'     => 'nullable|string',
+            'date_reviewed'         => 'nullable|date',
+            'released_date'         => 'nullable|date',
+            'id_expiration_date'    => 'nullable|date',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $idIssuance->update($request->all());
+
+        return (new IdIssuanceResource($idIssuance))->response();
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(IdIssuance $idIssuance): JsonResponse
+    {
+        $idIssuance->delete();
+        
+        return response()->json(null, 204);
     }
 }
