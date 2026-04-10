@@ -149,8 +149,8 @@ class ApplicationsController extends Controller
             'civil_status'      => 'sometimes|required|string',
             'citizenship'       => 'sometimes|required|string',
             'living_arrangement'=> 'sometimes|required|string',
+            'registration_type' => 'sometimes|required|string',
             
-            // Socio-Economic Fields (Para mag-update ang Application table)
             'is_pensioner'           => 'sometimes|boolean',
             'pension_source_gsis'    => 'nullable|boolean',
             'pension_source_sss'     => 'nullable|boolean',
@@ -168,20 +168,36 @@ class ApplicationsController extends Controller
             'has_illness'                => 'sometimes|boolean',
             'illness_details'            => 'nullable|string',
             'hospitalized_last_6_months' => 'sometimes|boolean',
+
+            // Document update validation
+            'document'   => 'sometimes|array|min:1',
+            'document.*' => 'file|mimes:pdf,jpg,jpeg,png,docx|max:10240',
         ]);
 
         $tempPassword = null;
         $finalUsername = null;
 
         try {
-            DB::transaction(function () use ($request, $application, $validated, $isAdmin, &$tempPassword, &$finalUsername) {
+            DB::transaction(function () use ($request, $application, &$validated, $isAdmin, &$tempPassword, &$finalUsername) {
                 
+                // --- FILE UPLOAD LOGIC FOR UPDATE ---
+                if ($request->hasFile('document')) {
+                    $fileMetaData = [];
+                    foreach ($request->file('document') as $file) {
+                        $path = $file->store('attachments', 'public');
+                        $fileMetaData[] = [
+                            'filename' => $file->getClientOriginalName(),
+                            'path'     => $path
+                        ];
+                    }
+                    $validated['document'] = json_encode($fileMetaData);
+                }
+
                 if ($isAdmin && isset($validated['reg_status'])) {
                     $validated['reviewed_by'] = $request->user()->id;
                     $validated['date_reviewed'] = now();
                 }
 
-                // Update Application table (Ito ang fix para sa socio-economics)
                 $application->update($validated);
 
                 if (isset($validated['reg_status']) && strtolower($validated['reg_status']) === 'approved') {
@@ -216,9 +232,8 @@ class ApplicationsController extends Controller
 
                     $updatedApp = $application->fresh();
 
-                    // FIX: Gamitin ang updateOrCreate para iwas Duplicate Rows sa Masterlist
                     Masterlist::updateOrCreate(
-                        ['application_id' => $updatedApp->id], // Hanapin kung may existing na
+                        ['application_id' => $updatedApp->id],
                         [
                             'user_id'           => $targetUserId,
                             'username'          => $finalUsername,
@@ -261,6 +276,12 @@ class ApplicationsController extends Controller
                             'has_illness'                => $updatedApp->has_illness,
                             'illness_details'            => $updatedApp->illness_details,
                             'hospitalized_last_6_months' => $updatedApp->hospitalized_last_6_months,
+
+                            // Sync missing columns to Masterlist
+                            'registration_type' => $updatedApp->registration_type,
+                            'date_reviewed'     => $updatedApp->date_reviewed,
+                            'reviewed_by'       => $updatedApp->reviewed_by,
+                            'vital_status'      => 'active',
 
                             'id_status'         => 'new',
                             'document'          => $updatedApp->document, 

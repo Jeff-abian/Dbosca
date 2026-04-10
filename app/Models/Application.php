@@ -68,6 +68,7 @@ class Application extends Model
         'registration_date',
         'date_reviewed',
         'reviewed_by',
+        'vital_status',
         'applicationscol'
     ];
 

@@ -32,7 +32,27 @@ protected $fillable = [
     'citizenship', 'birth_place', 'address', 'barangay', 'city_municipality', 
     'district', 'province', 'email', 'contact_number', 'living_arrangement', 
     'is_pensioner', 'pension_amount', 'has_illness', 'id_status', 
-    'registration_date','document'
+    'registration_date','document', // --- DAPAT NANDITO ITONG MGA ITO PARA MAG-SYNC ---
+    'is_pensioner',
+    'pension_source_gsis',
+    'pension_source_sss',
+    'pension_source_afpslai',
+    'pension_source_others',
+    'date_of_death',
+    'pension_amount',
+    'has_permanent_income',
+    'permanent_income_source',
+    'has_regular_support',
+    'support_type_cash',
+    'reviewed_by',
+    'support_cash_amount',
+    'support_cash_frequency',
+    'support_type_inkind', // <--- I-check kung 'kind_support_details' o 'support_inkind_details' ang nasa DB
+    'has_illness',
+    'illness_details',
+    'hospitalized_last_6_months',
+    
+    'id_status', 'document', 'registration_date'
 ];
     protected $casts = [
         'is_pensioner' => 'boolean',
