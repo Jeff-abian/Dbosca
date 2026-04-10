@@ -75,17 +75,14 @@ class ApplicationsController extends Controller
             'pension_source_afpslai' => 'nullable|boolean',
             'pension_source_others'  => 'nullable|string',
             'pension_amount'         => 'nullable|numeric',
-            
             'has_permanent_income'    => 'required|boolean',
             'permanent_income_source' => 'nullable|string',
-            
             'has_regular_support'    => 'required|boolean',
             'support_type_cash'      => 'nullable|boolean',
             'support_cash_amount'    => 'nullable|numeric',
             'support_cash_frequency' => 'nullable|string',
             'support_type_inkind'    => 'nullable|boolean',
             'kind_support_details'   => 'nullable|string',
-            
             'has_illness'                => 'required|boolean',
             'illness_details'            => 'nullable|string',
             'hospitalized_last_6_months' => 'required|boolean',
@@ -132,7 +129,6 @@ class ApplicationsController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Approved applications cannot be edited.'], 403);
         }
 
-        // --- DINAGDAGAN DITO PARA MASALO LAHAT NG PAYLOAD MO ---
         $validated = $request->validate([
             'reg_status'        => 'sometimes|required|in:approved,disapproved,pending',
             'rejection_remarks' => 'required_if:reg_status,disapproved|string|nullable',
@@ -154,7 +150,7 @@ class ApplicationsController extends Controller
             'citizenship'       => 'sometimes|required|string',
             'living_arrangement'=> 'sometimes|required|string',
             
-            // Socio-Economic Fields (Added here to fix the update issue)
+            // Socio-Economic Fields (Para mag-update ang Application table)
             'is_pensioner'           => 'sometimes|boolean',
             'pension_source_gsis'    => 'nullable|boolean',
             'pension_source_sss'     => 'nullable|boolean',
@@ -185,7 +181,8 @@ class ApplicationsController extends Controller
                     $validated['date_reviewed'] = now();
                 }
 
-               $application->update($request->all());
+                // Update Application table (Ito ang fix para sa socio-economics)
+                $application->update($validated);
 
                 if (isset($validated['reg_status']) && strtolower($validated['reg_status']) === 'approved') {
                     
@@ -219,55 +216,57 @@ class ApplicationsController extends Controller
 
                     $updatedApp = $application->fresh();
 
-                    // --- DINAGDAGAN DITO PARA PUMASOK SA MASTERLIST LAHAT NG DATA ---
-                    Masterlist::create([
-                        'application_id'    => $updatedApp->id,
-                        'user_id'           => $targetUserId,
-                        'username'          => $finalUsername,
-                        'temp_password'     => $tempPassword,
-                        'scid_number'       => $scidNumber,
-                        'first_name'        => $updatedApp->first_name,
-                        'middle_name'       => $updatedApp->middle_name,
-                        'last_name'         => $updatedApp->last_name,
-                        'suffix'            => $updatedApp->suffix,
-                        'birth_date'        => $updatedApp->birth_date,
-                        'age'               => $updatedApp->age,
-                        'sex'               => $updatedApp->sex,
-                        'civil_status'      => $updatedApp->civil_status,
-                        'citizenship'       => $updatedApp->citizenship,
-                        'birth_place'       => $updatedApp->birth_place,
-                        'district'          => $updatedApp->district,
-                        'address'           => $updatedApp->address,
-                        'barangay'          => $updatedApp->barangay,
-                        'city_municipality' => $updatedApp->city_municipality,
-                        'province'          => $updatedApp->province,
-                        'email'             => $updatedApp->email,
-                        'contact_number'    => $updatedApp->contact_number,
-                        'living_arrangement'=> $updatedApp->living_arrangement,
-                        
-                        // Socio-Economic Mapping for Masterlist
-                        'is_pensioner'           => $updatedApp->is_pensioner,
-                        'pension_source_gsis'    => $updatedApp->pension_source_gsis,
-                        'pension_source_sss'     => $updatedApp->pension_source_sss,
-                        'pension_source_afpslai' => $updatedApp->pension_source_afpslai,
-                        'pension_source_others'  => $updatedApp->pension_source_others,
-                        'pension_amount'         => $updatedApp->pension_amount,
-                        'has_permanent_income'    => $updatedApp->has_permanent_income,
-                        'permanent_income_source' => $updatedApp->permanent_income_source,
-                        'has_regular_support'    => $updatedApp->has_regular_support,
-                        'support_type_cash'      => $updatedApp->support_type_cash,
-                        'support_cash_amount'    => $updatedApp->support_cash_amount,
-                        'support_cash_frequency' => $updatedApp->support_cash_frequency,
-                        'support_type_inkind'    => $updatedApp->support_type_inkind,
-                        'kind_support_details'   => $updatedApp->kind_support_details,
-                        'has_illness'                => $updatedApp->has_illness,
-                        'illness_details'            => $updatedApp->illness_details,
-                        'hospitalized_last_6_months' => $updatedApp->hospitalized_last_6_months,
+                    // FIX: Gamitin ang updateOrCreate para iwas Duplicate Rows sa Masterlist
+                    Masterlist::updateOrCreate(
+                        ['application_id' => $updatedApp->id], // Hanapin kung may existing na
+                        [
+                            'user_id'           => $targetUserId,
+                            'username'          => $finalUsername,
+                            'temp_password'     => $tempPassword,
+                            'scid_number'       => $scidNumber,
+                            'first_name'        => $updatedApp->first_name,
+                            'middle_name'       => $updatedApp->middle_name,
+                            'last_name'         => $updatedApp->last_name,
+                            'suffix'            => $updatedApp->suffix,
+                            'birth_date'        => $updatedApp->birth_date,
+                            'age'               => $updatedApp->age,
+                            'sex'               => $updatedApp->sex,
+                            'civil_status'      => $updatedApp->civil_status,
+                            'citizenship'       => $updatedApp->citizenship,
+                            'birth_place'       => $updatedApp->birth_place,
+                            'district'          => $updatedApp->district,
+                            'address'           => $updatedApp->address,
+                            'barangay'          => $updatedApp->barangay,
+                            'city_municipality' => $updatedApp->city_municipality,
+                            'province'          => $updatedApp->province,
+                            'email'             => $updatedApp->email,
+                            'contact_number'    => $updatedApp->contact_number,
+                            'living_arrangement'=> $updatedApp->living_arrangement,
+                            
+                            // Socio-Economic Sync
+                            'is_pensioner'           => $updatedApp->is_pensioner,
+                            'pension_source_gsis'    => $updatedApp->pension_source_gsis,
+                            'pension_source_sss'     => $updatedApp->pension_source_sss,
+                            'pension_source_afpslai' => $updatedApp->pension_source_afpslai,
+                            'pension_source_others'  => $updatedApp->pension_source_others,
+                            'pension_amount'         => $updatedApp->pension_amount,
+                            'has_permanent_income'    => $updatedApp->has_permanent_income,
+                            'permanent_income_source' => $updatedApp->permanent_income_source,
+                            'has_regular_support'    => $updatedApp->has_regular_support,
+                            'support_type_cash'      => $updatedApp->support_type_cash,
+                            'support_cash_amount'    => $updatedApp->support_cash_amount,
+                            'support_cash_frequency' => $updatedApp->support_cash_frequency,
+                            'support_type_inkind'    => $updatedApp->support_type_inkind,
+                            'kind_support_details'   => $updatedApp->kind_support_details,
+                            'has_illness'                => $updatedApp->has_illness,
+                            'illness_details'            => $updatedApp->illness_details,
+                            'hospitalized_last_6_months' => $updatedApp->hospitalized_last_6_months,
 
-                        'id_status'         => 'new',
-                        'document'          => $updatedApp->document, 
-                        'registration_date' => now(),
-                    ]);
+                            'id_status'         => 'new',
+                            'document'          => $updatedApp->document, 
+                            'registration_date' => now(),
+                        ]
+                    );
                 }
             });
 
