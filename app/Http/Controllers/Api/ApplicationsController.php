@@ -17,7 +17,6 @@ class ApplicationsController extends Controller
 {
     /**
      * GET /api/applications
-     * Filtered: Admin sees all, Citizen sees only their own.
      */
     public function index(Request $request)
     {
@@ -50,7 +49,6 @@ class ApplicationsController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            // Basic Info
             'last_name'         => 'required|string|max:255',
             'first_name'        => 'required|string|max:255',
             'middle_name'       => 'nullable|string|max:255',
@@ -71,7 +69,6 @@ class ApplicationsController extends Controller
             'living_arrangement'=> 'required|string',
             'registration_type' => 'required|string',
 
-            // --- DETAILED FIELDS (ACCORDING TO PAYLOAD) ---
             'is_pensioner'           => 'required|boolean',
             'pension_source_gsis'    => 'nullable|boolean',
             'pension_source_sss'     => 'nullable|boolean',
@@ -124,7 +121,6 @@ class ApplicationsController extends Controller
 
     /**
      * PUT /api/applications/{id}
-     * Pinahusay: Kasama ang Password Generation at has_changed flag.
      */
     public function update(Request $request, Application $application)
     {
@@ -136,6 +132,7 @@ class ApplicationsController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Approved applications cannot be edited.'], 403);
         }
 
+        // --- DINAGDAGAN DITO PARA MASALO LAHAT NG PAYLOAD MO ---
         $validated = $request->validate([
             'reg_status'        => 'sometimes|required|in:approved,disapproved,pending',
             'rejection_remarks' => 'required_if:reg_status,disapproved|string|nullable',
@@ -156,9 +153,25 @@ class ApplicationsController extends Controller
             'civil_status'      => 'sometimes|required|string',
             'citizenship'       => 'sometimes|required|string',
             'living_arrangement'=> 'sometimes|required|string',
-            'is_pensioner'      => 'nullable|boolean',
-            'pension_amount'    => 'nullable|numeric',
-            'has_illness'       => 'sometimes|required|boolean',
+            
+            // Socio-Economic Fields (Added here to fix the update issue)
+            'is_pensioner'           => 'sometimes|boolean',
+            'pension_source_gsis'    => 'nullable|boolean',
+            'pension_source_sss'     => 'nullable|boolean',
+            'pension_source_afpslai' => 'nullable|boolean',
+            'pension_source_others'  => 'nullable|string',
+            'pension_amount'         => 'nullable|numeric',
+            'has_permanent_income'    => 'sometimes|boolean',
+            'permanent_income_source' => 'nullable|string',
+            'has_regular_support'    => 'sometimes|boolean',
+            'support_type_cash'      => 'nullable|boolean',
+            'support_cash_amount'    => 'nullable|numeric',
+            'support_cash_frequency' => 'nullable|string',
+            'support_type_inkind'    => 'nullable|boolean',
+            'kind_support_details'   => 'nullable|string',
+            'has_illness'                => 'sometimes|boolean',
+            'illness_details'            => 'nullable|string',
+            'hospitalized_last_6_months' => 'sometimes|boolean',
         ]);
 
         $tempPassword = null;
@@ -172,18 +185,16 @@ class ApplicationsController extends Controller
                     $validated['date_reviewed'] = now();
                 }
 
-                $application->update($validated);
+               $application->update($request->all());
 
                 if (isset($validated['reg_status']) && strtolower($validated['reg_status']) === 'approved') {
                     
                     $existingUser = User::where('email', $application->email)->first();
                     
                     if (!$existingUser) {
-                        // Logic: sc + 4 numbers
                         $tempPassword = 'sc' . rand(1000, 9999);
-                        
                         $finalUsername = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
-                        while (User::where('username', $username ?? $finalUsername)->exists()) {
+                        while (User::where('username', $finalUsername)->exists()) {
                             $finalUsername = Str::slug($application->first_name . $application->last_name, '.') . '.' . rand(100, 999);
                         }
 
@@ -192,7 +203,7 @@ class ApplicationsController extends Controller
                             'email'       => $application->email,
                             'username'    => $finalUsername,
                             'password'    => Hash::make($tempPassword),
-                            'has_changed' => 0, // 0 as requested for temporary state
+                            'has_changed' => 0,
                             'role'        => 3,
                         ]);
                         $targetUserId = $newUser->id;
@@ -208,11 +219,12 @@ class ApplicationsController extends Controller
 
                     $updatedApp = $application->fresh();
 
+                    // --- DINAGDAGAN DITO PARA PUMASOK SA MASTERLIST LAHAT NG DATA ---
                     Masterlist::create([
                         'application_id'    => $updatedApp->id,
                         'user_id'           => $targetUserId,
                         'username'          => $finalUsername,
-                        'temp_password'     => $tempPassword, // Plain password as requested for database
+                        'temp_password'     => $tempPassword,
                         'scid_number'       => $scidNumber,
                         'first_name'        => $updatedApp->first_name,
                         'middle_name'       => $updatedApp->middle_name,
@@ -232,9 +244,26 @@ class ApplicationsController extends Controller
                         'email'             => $updatedApp->email,
                         'contact_number'    => $updatedApp->contact_number,
                         'living_arrangement'=> $updatedApp->living_arrangement,
-                        'is_pensioner'      => $updatedApp->is_pensioner,
-                        'pension_amount'    => $updatedApp->pension_amount,
-                        'has_illness'       => $updatedApp->has_illness,
+                        
+                        // Socio-Economic Mapping for Masterlist
+                        'is_pensioner'           => $updatedApp->is_pensioner,
+                        'pension_source_gsis'    => $updatedApp->pension_source_gsis,
+                        'pension_source_sss'     => $updatedApp->pension_source_sss,
+                        'pension_source_afpslai' => $updatedApp->pension_source_afpslai,
+                        'pension_source_others'  => $updatedApp->pension_source_others,
+                        'pension_amount'         => $updatedApp->pension_amount,
+                        'has_permanent_income'    => $updatedApp->has_permanent_income,
+                        'permanent_income_source' => $updatedApp->permanent_income_source,
+                        'has_regular_support'    => $updatedApp->has_regular_support,
+                        'support_type_cash'      => $updatedApp->support_type_cash,
+                        'support_cash_amount'    => $updatedApp->support_cash_amount,
+                        'support_cash_frequency' => $updatedApp->support_cash_frequency,
+                        'support_type_inkind'    => $updatedApp->support_type_inkind,
+                        'kind_support_details'   => $updatedApp->kind_support_details,
+                        'has_illness'                => $updatedApp->has_illness,
+                        'illness_details'            => $updatedApp->illness_details,
+                        'hospitalized_last_6_months' => $updatedApp->hospitalized_last_6_months,
+
                         'id_status'         => 'new',
                         'document'          => $updatedApp->document, 
                         'registration_date' => now(),
@@ -249,7 +278,6 @@ class ApplicationsController extends Controller
                 'message' => $isApproved ? 'Application approved and account created.' : 'Application details updated successfully.',
             ];
 
-            // Response credentials object for frontend
             if ($isApproved && $tempPassword) {
                 $response['credentials'] = [
                     'username'           => $finalUsername,
@@ -294,5 +322,4 @@ class ApplicationsController extends Controller
         $application->delete();
         return response()->json(['status' => 'success', 'message' => 'Application deleted.']);
     }
-    
 }

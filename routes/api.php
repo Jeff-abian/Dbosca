@@ -54,6 +54,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/applications/{application}', [ApplicationsController::class, 'destroy']);
     Route::get('/files/view', [FileController::class, 'viewFile']);
     Route::post('/masterlist/move-to-pending/{id}', [MasterlistController::class, 'moveToPending']); // Move back to pending (Reversal)
+    // Benefit Applications Routes
+    Route::apiResource('benefit-applications', BenefitController::class);
+    Route::post('benefit-applications/{id}/status', [BenefitController::class, 'updateStatus']);
 
     // Basic test route (default) and Logout
     Route::get('/user', function (Request $request) {
